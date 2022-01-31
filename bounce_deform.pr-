@@ -1,0 +1,68 @@
+Process bounce_deform(int process_id, float quantity, float size_x_base, float size_y_base);
+Private
+	float x_speed;
+	float y_speed;
+	float x_acceleration;
+	float y_acceleration;
+	
+	float x_before;
+	float y_before;
+	float x_speed_before;
+	float y_speed_before;
+	
+	int size_x_objective;
+	int size_y_objective;
+Begin
+	if(!exists(process_id))
+		return;
+	end
+	
+	/*
+	write_int(0,0,20,0,&process_id.size_x);
+	write_int(0,0,30,0,&process_id.size_y);
+	*/
+	
+	x_before=process_id.x;
+	y_before=process_id.y;
+	while(exists(process_id))
+		size_x_objective=0;
+		size_y_objective=0;
+		if(size_x_base>0)
+			x_speed=abs(x_before-process_id.x);
+			size_x_objective=size_x_base+(((x_acceleration+x_speed)*quantity)/2);
+			x_before=process_id.x;
+			x_speed_before=x_speed;
+		end
+		
+		if(size_y_base>0)
+			x_acceleration=abs(x_speed_before-x_speed);
+			y_speed=abs(y_before-process_id.y);
+			y_acceleration=abs(y_speed_before-y_speed);
+			size_y_objective=size_y_base+((y_acceleration+y_speed)*quantity);
+			y_before=process_id.y;
+			y_speed_before=y_speed;
+			if(size_x_base==0)
+				//father.size_x=father.size-((father.size_y-size_y_base)/2);
+				size_x_objective-=((father.size_y-size_y_base)/2);
+			end
+		end
+		
+		process_id.size_x=size_x_base+abs((process_id.size_x-size_x_objective)/10);
+		process_id.size_y=size_y_base+abs((process_id.size_y-size_y_objective)/10);
+		
+		frame;
+	end
+End
+
+Process bounce_EVERYTHING();
+Begin
+	loop
+		if(key(_b))
+			while(key(_b)) frame; end
+			while(i=get_id(all_process))
+				bounce_deform(i,40,100,100);
+			end
+		end
+		frame;
+	end
+End

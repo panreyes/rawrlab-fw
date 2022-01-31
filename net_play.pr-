@@ -1,0 +1,1284 @@
+// Netplay library v0.1
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+#IFNDEF MOD_NET_PLAY
+#DEFINE MOD_NET_PLAY 1
+#DEFINE NETPLAY 1
+
+#IFDEF NETWORKING
+import "mod_fsock";
+#ENDIF
+
+//Capas de compatibilidad de PixTudio a BennuGD1/2
+include "../../../libs/rawrlab-fw/pxtcompat.h";
+
+Const
+	net_msg_size=50000;
+	net_msg_cliente_size=150;
+	net_max_num_process=500;
+	net_x_offset=1000;
+	net_y_offset=1000;
+	net_port=8868;
+	net_num_resources=100;
+	net_eol=-11111111;
+	net_frame_size=100;
+End
+
+Global
+	int net_msg_biggest;
+	int net_max_process;
+	
+	//networking & replays:
+	int stop_recording_flag=0;
+	string linea;
+	int id_net_screen_put;
+	char net_buffer[net_msg_size];
+	int saving_replay=1;
+	int replay_file;	
+	int net_buffer_last_pos;
+	int estadisticas[3];
+	int net_resync;
+	int net_fallos;
+	int net_clients;
+	int net_status;
+	int net_players_can_join=1;
+	
+	int sound_messages[10][3];
+	int song_messages[10];
+
+	string regions_parms[9];
+	int regions_changed;
+	
+	string scrolls_parms[9];
+	int scrolls_enabled[9];
+	int scrolls_changed;
+
+	string fpgs_paths[net_num_resources];
+	int fpgs_ids[net_num_resources];
+	int fpgs_changed;
+	string wavs_paths[net_num_resources];
+	int wavs_ids[net_num_resources];
+	int wavs_changed;
+	string oggs_paths[net_num_resources];
+	int oggs_ids[net_num_resources];
+	int oggs_changed;
+	string pngs_paths[net_num_resources];
+	int pngs_ids[net_num_resources];
+	int pngs_changed;
+	int screen_background_changed;
+	int screen_background_file;
+	int screen_background_graph;
+	
+	// fin sistema de replays
+End
+
+#IFDEF NETWORKING
+function string get_net_buffer_line();
+Private
+	string line;
+	int next_pos;
+Begin
+	if(net_buffer="") //evitamos el cuelgue cuando no recibamos datos
+		return "f";
+	end
+	next_pos=find(net_buffer,";",net_buffer_last_pos);
+	if(next_pos>0)
+		line=substr(net_buffer,net_buffer_last_pos,(next_pos-net_buffer_last_pos));
+		net_buffer_last_pos=next_pos+1;
+	end
+	return line;
+End
+
+function string hasta_la_coma_string(int num_campo);
+private
+	string temp;
+	w;
+	campo_actual;
+begin
+	from w=0 to len(linea);
+		if(linea[w]!=",")
+			temp+=""+linea[w];
+		else
+			if(campo_actual==num_campo)
+				break;
+			else
+				temp="";
+				campo_actual++;
+			end
+		end
+	end
+	return temp;
+end
+
+function hasta_la_coma(int num_campo);
+private
+	string temp;
+	int w;
+	int campo_actual;
+begin
+	from w=0 to len(linea);
+		if(linea[w]!=",")
+			temp+=""+linea[w];
+		else
+			if(campo_actual==num_campo)
+				break;
+			else
+				temp="";
+				campo_actual++;
+			end
+		end
+	end
+	if(temp=="")
+		return net_eol;
+	else
+		return atoi(temp);
+	end
+end
+
+Process start_recording(string fichero);
+Private
+	struct ppp[net_max_num_process];
+		int id;
+		int file;
+		int x;
+		int y;
+		int z;
+		int alpha;
+		int flags;
+		int size;
+		int size_x;
+		int size_y;
+		int angle;
+		int region;
+		int ctype;
+		int graph;
+	end
+	p_fpgs_ids[net_num_resources];
+	p_pngs_ids[net_num_resources];
+	p_oggs_ids[net_num_resources];
+	p_wavs_ids[net_num_resources];
+	pid;
+	new;
+	string output;
+	min_changes;
+Begin
+	say("Recording!");
+
+	priority=-99;
+	stop_recording_flag=0;
+	unkillable=1;
+		
+	j=1;
+
+	fpgs_changed=1;
+	wavs_changed=1;
+	pngs_changed=1;
+	oggs_changed=1;
+	
+	from i=0 to 10;
+		sound_messages[i][1]=0;
+		sound_messages[i][2]=0;
+		sound_messages[i][3]=0;
+	end
+	
+	if(fichero!="")
+		replay_file=fopen(fichero,O_WRITE);
+		saving_replay=1;
+	else
+		saving_replay=0;
+	end
+	
+	while(stop_recording_flag==0)
+		if(net_resync)
+			from i=0 to net_num_resources;
+				p_fpgs_ids[i]=0;
+				p_pngs_ids[i]=0;
+				p_oggs_ids[i]=0;
+				p_wavs_ids[i]=0;
+			end
+			from i=0 to net_max_process;
+				ppp[i].id=0;
+				ppp[i].file=0;
+				ppp[i].x=0;
+				ppp[i].y=0;
+				ppp[i].z=0;
+				ppp[i].alpha=0;
+				ppp[i].flags=0;
+				ppp[i].size=0;
+				ppp[i].size_x=0;
+				ppp[i].size_y=0;
+				ppp[i].angle=0;
+				ppp[i].region=0;
+				ppp[i].ctype=0;
+				ppp[i].graph=0;
+			end
+			net_max_process=100;
+			fpgs_changed=1;
+			pngs_changed=1;
+			oggs_changed=1;
+			wavs_changed=1;
+			regions_changed=1;
+			scrolls_changed=1;
+			screen_background_changed=1;
+			
+			net_buffer="";
+			
+			net_resync=0;
+		end
+	
+		//revisamos si se ha cargado o descargado algún recurso
+		//fpgs
+		if(fpgs_changed)
+			fpgs_changed=0;
+			from i=1 to net_num_resources;
+				if(p_fpgs_ids[i]!=fpgs_ids[i])
+					if(fpgs_ids[i]==0)
+						p_fpgs_ids[i]=0;
+						net_add_buffer("rf,"+i);
+					else
+						p_fpgs_ids[i]=fpgs_ids[i];
+						net_add_buffer("lf,"+i+","+fpgs_paths[i]);
+					end
+				end
+			end
+		end
+		//pngs
+		if(pngs_changed)
+			pngs_changed=0;
+			from i=1 to net_num_resources;
+				if(p_pngs_ids[i]!=pngs_ids[i])
+					if(pngs_ids[i]==0)
+						p_pngs_ids[i]=0;
+						net_add_buffer("rp,"+i);
+					else
+						p_pngs_ids[i]=pngs_ids[i];
+						net_add_buffer("lp,"+i+","+pngs_paths[i]);
+					end
+				end
+			end
+		end
+		//ogg
+		if(oggs_changed)
+			oggs_changed=0;
+			from i=1 to net_num_resources;
+				if(p_oggs_ids[i]!=oggs_ids[i])
+					if(oggs_ids[i]==0)
+						p_oggs_ids[i]=0;
+						net_add_buffer("ro,"+i);
+					else
+						p_oggs_ids[i]=oggs_ids[i];
+						net_add_buffer("lo,"+i+","+oggs_paths[i]);
+					end
+				end
+			end
+		end
+		//wav
+		if(wavs_changed)
+			wavs_changed=0;
+			from i=1 to net_num_resources;
+				if(p_wavs_ids[i]!=wavs_ids[i])
+					if(wavs_ids[i]==0)
+						p_wavs_ids[i]=0;
+						net_add_buffer("rw,"+i);
+					else
+						p_wavs_ids[i]=wavs_ids[i];
+						net_add_buffer("lw,"+i+","+wavs_paths[i]);
+					end
+				end
+			end
+		end
+		if(screen_background_changed)
+			screen_background_changed=0;
+			net_add_buffer("b,"+screen_background_file+","+screen_background_graph);
+		end
+		
+		from i=1 to 10;
+			action=0;
+			if(song_messages[i]!=0)
+				if(song_messages[i]>-1)
+					from j=1 to net_num_resources;
+						if(song_messages[i]==oggs_ids[j])
+							action=1;
+							break;
+						end
+					end
+				else
+					j=song_messages[i];
+					action=1;
+				end
+				if(action)
+					net_add_buffer("po,"+j);
+				end
+				song_messages[i]=0;
+			end
+			action=0;
+			if(sound_messages[i][1]!=0)
+				if(sound_messages[i][1]>0)
+					from j=1 to net_num_resources;
+						if(wavs_ids[sound_messages[i][1]]==wavs_ids[j])
+							action=1;
+							break;
+						end
+					end
+					if(action)
+						net_add_buffer("pw,"+j+","+sound_messages[i][2]+","+sound_messages[i][3]);
+					end
+				else
+					net_add_buffer("pw,-1,0,"+sound_messages[i][3]);
+				end
+				sound_messages[i][1]=0;
+				sound_messages[i][2]=0;
+				sound_messages[i][3]=0;
+			end
+		end
+	
+		from i=1 to net_max_process;
+			if(ppp[i].id!=0)
+				if(!exists(ppp[i].id))
+					net_add_buffer("d,"+i);
+					ppp[i].id=0;
+				else
+					if(ppp[i].id.graph==0 or ppp[i].id.alpha==0 or ppp[i].id.size==0)
+						net_add_buffer("d,"+i);
+						ppp[i].id=0;
+					end
+				end
+			end
+		end
+		
+		//scrolls
+		
+		//start & stop
+		if(scrolls_changed)
+			scrolls_changed=0;
+			from i=0 to 8;
+				if(scrolls_enabled[i])
+					net_add_buffer("ss,"+i+","+scrolls_parms[i]);
+				else
+					net_add_buffer("se,"+i);
+				end
+			end
+		end
+		
+		//scroll update
+		from i=0 to 8;
+			if(scrolls_enabled[i])
+				net_add_buffer("su,"+i+","+scroll[i].x0+","+scroll[i].x1+","+scroll[i].y0+","+scroll[i].y1+","+scroll[i].z);
+			end
+		end
+
+		//regions
+		if(regions_changed)
+			regions_changed=0;
+			if(regions_parms[i]!="")
+				from i=0 to 8;
+					net_add_buffer("a,"+i+","+regions_parms[i]);
+				end
+			end
+		end
+	
+		while(i=get_id(all_process))
+			pid=0; new=0;
+			
+			//averiguamos si ya está registrado:
+			from j=1 to net_max_process;
+				if(ppp[j].id==i)
+					pid=j;
+					break;
+				end
+			end
+
+		
+			//si está registrado o es nuevo pero es pintado en pantalla...
+			if(pid>0 or (i.graph>0 and i.alpha>0 and 
+						 (i.size>0 or ((i.size_x!=100 or i.size_y!=100) and (i.size_x>0 or i.size_y>0))) 
+						 and ((i.x>-net_x_offset and i.x<1280+net_x_offset and i.y>-net_y_offset and i.y<720+net_y_offset) 
+							  or i.ctype==c_scroll)))
+				
+				//si no está registrado, le buscamos un hueco
+				if(pid==0)
+					from j=1 to net_max_num_process;
+						if(ppp[j].id==0)
+							new=1;
+							ppp[j].id=i;
+							pid=j;
+							if(j>net_max_process) net_max_process=j; say("HOLA! MAXPROCESS: "+J); end
+							break;
+						end
+					end
+				end
+				
+				//tenemos su pid, vamos a guardar datos
+				if(pid!=0)
+					//si es nuevo o hay actualizaciones, metemos datos y escribimos línea
+					if(new or (fpgs_ids[ppp[pid].file]!=i.file or ppp[pid].x!=i.x or ppp[pid].y!=i.y
+					 or ppp[pid].z!=i.z or ppp[pid].alpha!=i.alpha or ppp[pid].flags!=i.flags
+					 or ppp[pid].size!=i.size or ppp[pid].size_x!=i.size_x or ppp[pid].size_y!=i.size_y 
+					 or ppp[pid].angle!=i.angle/1000 or ppp[pid].region!=i.region
+					 or ppp[pid].ctype!=i.ctype or ppp[pid].graph!=i.graph))
+						from j=1 to net_num_resources;
+							if(fpgs_ids[j]==i.file)
+								ppp[pid].file=j;
+								break;
+							end
+						end
+						
+						if(new)
+							output="n,";
+							min_changes=13;
+						else
+							output="u,";
+							if(ppp[pid].size_y!=i.size_y) min_changes=13;
+							elseif(ppp[pid].size_x!=i.size_x) min_changes=12;
+							elseif(ppp[pid].ctype!=i.ctype) min_changes=11;
+							elseif(ppp[pid].region!=i.region) min_changes=10;
+							elseif(ppp[pid].flags!=i.flags) min_changes=8;
+							elseif(ppp[pid].angle!=i.angle) min_changes=7;
+							elseif(ppp[pid].z!=i.z) min_changes=6;
+							elseif(ppp[pid].size!=i.size) min_changes=5;
+							elseif(ppp[pid].alpha!=i.alpha) min_changes=4;
+							elseif(ppp[pid].graph!=i.graph) min_changes=3;
+							elseif(ppp[pid].y!=i.y) min_changes=2;
+							elseif(ppp[pid].x!=i.x) min_changes=1; 
+							else
+								say("pid sin cambios?????");
+							end
+						end
+						output+=itoa(pid)+",";
+												
+						ppp[pid].x=i.x; output+=i.x+",";
+						if(min_changes>1) ppp[pid].y=i.y; output+=i.y+","; end
+						if(min_changes>2) 
+							if(i.file>0)
+								ppp[pid].graph=i.graph;
+							else
+								from j=1 to net_num_resources;
+									ppp[pid].graph=0;
+									if(pngs_ids[j]==i.graph)
+										ppp[pid].graph=j;
+										break;
+									end
+								end
+							end
+							output+=ppp[pid].graph+","; 
+						end
+						if(min_changes>3) ppp[pid].alpha=i.alpha; output+=i.alpha+","; end
+						if(min_changes>4) ppp[pid].size=i.size; output+=i.size+","; end
+						if(min_changes>5) ppp[pid].z=i.z; output+=i.z+","; end
+						if(min_changes>6) ppp[pid].angle=i.angle/1000; output+=(i.angle/1000)+","; end
+						if(min_changes>7) ppp[pid].flags=i.flags; output+=i.flags+","; end
+						if(min_changes>8) output+=ppp[pid].file+","; end
+						if(min_changes>9) ppp[pid].region=i.region; output+=i.region+","; end
+						if(min_changes>10) ppp[pid].ctype=i.ctype; output+=i.ctype+","; end
+						if(min_changes>11) ppp[pid].size_x=i.size_x; output+=i.size_x+","; end
+						if(min_changes>12) ppp[pid].size_y=i.size_y; output+=""+i.size_y; end
+						
+						net_add_buffer(output);
+					end
+				else
+					say("Proceso sin pid en net_play!");
+					//si no hay hueco, ????
+				end
+			end
+		end
+		//say("Completo:"+estadisticas[1]);
+		//say("Parcial:"+estadisticas[2]);
+		//say("Básico:"+estadisticas[3]);
+		net_add_buffer("f");
+		frame(net_frame_size);
+		net_buffer="";
+	end
+	fclose(replay_file);
+End
+
+Function stop_recording();
+Begin
+	stop_recording_flag=1;
+End
+
+Process play_replay(string replay_path);
+Private
+	fp;
+	ids[net_max_num_process];
+	streaming;
+	reset;
+	string resource_path;
+Begin
+	priority=-100;
+
+	if(replay_path!="")
+		let_me_alone();
+		net_screen_clear();
+
+		from i=0 to 8; scroll_stop(i); end
+		song_stop();
+		sound_stop(all_sound);
+		fp=fopen(replay_path,O_READ);
+		streaming=0;
+	else
+		streaming=1;
+	end
+
+	net_fallos=0;
+	
+	loop
+		if(key(_esc)) exit(); end
+		if(key(_r)) while(key(_r)) frame; end net_resync=1; frame; return; end
+		if(streaming)
+			linea=get_net_buffer_line();
+		else
+			if(feof(fp)) break; end
+			linea=fgets(fp);
+		end
+		if(linea=="")
+			frame(net_frame_size);
+		else
+			switch(linea[0])
+				case "b": //background
+					j=hasta_la_coma(1);
+					i=hasta_la_coma(2);
+					if(i>0)
+						net_screen_put(fpgs_ids[j],i);
+					else
+						net_screen_clear();
+					end				
+				end
+				case "a": //regions, because yes
+					region_define(hasta_la_coma(1),hasta_la_coma(2),hasta_la_coma(3),hasta_la_coma(4),hasta_la_coma(5));
+				end
+				case "d": //matamos un proceso
+					j=hasta_la_coma(1);
+					if(exists(ids[j]))
+						signal(ids[j],s_kill);
+						ids[j]=0;
+					end
+				end
+				case "l": //carga de recursos: lf,lp,lo,lw
+					j=hasta_la_coma(1);
+					resource_path=hasta_la_coma_string(2);
+					switch(linea[1])
+						case "f":
+							if(fpgs_paths[j]!=resource_path)
+								if(fpgs_ids[j]>0)
+									fpg_unload(fpgs_ids[j]);
+									fpgs_ids[j]=0;
+								end
+								fpgs_ids[j]=fpg_load(resource_path);
+								fpgs_paths[j]=resource_path;
+							end
+						end
+						case "p":
+							if(pngs_paths[j]!=resource_path)
+								if(pngs_ids[j]>0)
+									map_unload(0,pngs_ids[j]);
+									pngs_ids[j]=0;
+								end
+								pngs_ids[j]=png_load(resource_path);
+								pngs_paths[j]=resource_path;
+							end
+						end
+						case "o":
+							if(oggs_paths[j]!=resource_path)
+								if(oggs_ids[j]>0)
+									song_unload(oggs_ids[j]);
+									oggs_ids[j]=0;
+								end
+								oggs_ids[j]=song_load(resource_path);
+								oggs_paths[j]=resource_path;
+							end
+						end
+						case "w":
+							if(wavs_paths[j]!=resource_path)
+								if(wavs_ids[j]>0)
+									sound_unload(wavs_ids[j]);
+									wavs_ids[j]=0;
+								end								
+								wavs_ids[j]=sound_load(resource_path);
+								wavs_paths[j]=resource_path;
+							end
+						end
+					end
+				end
+				case "n": //creamos un nuevo proceso
+					//creamos un nuevo dummy en el primer hueco vacío
+					i=hasta_la_coma(1);
+					ids[i]=replay_dummies();
+					ids[i].file=fpgs_ids[hasta_la_coma(10)];
+					dummy_data_update(ids[i]);
+				end
+				case "u": //actualización de proceso
+					//averiguamos en que hueco está
+					i=hasta_la_coma(1);
+					if(exists(ids[i]))
+						dummy_data_update(ids[i]);
+					else
+						say("Bug! ID "+i+" no existente!");
+						net_fallos++;
+						if(net_fallos>5)
+							net_resync=1;
+							return;
+						end
+					end
+					//say("update dummy "+hasta_la_coma(1));
+				end
+				case "p": //po: reproducir canción, pw: reproducir sonido
+					j=hasta_la_coma(1);
+					switch(linea[1])
+						case "o":
+							switch(j)
+								case -1:
+									song_stop();
+								end
+								case -2:
+									music_fade_out(250);
+								end
+								default:
+									if(oggs_ids[j]!=0)
+										song_play(oggs_ids[j],0);
+									else
+										say("No está cargada la canción con id "+j);
+									end
+								end
+							end
+						end
+						case "w":
+							if(j>-1)
+								sound_play(wavs_ids[j],hasta_la_coma(2),hasta_la_coma(3));
+							else
+								sound_stop(hasta_la_coma(3));
+							end
+						end
+					end
+				end
+				case "r": //descarga de recursos
+					j=hasta_la_coma(1);
+					switch(linea[1])
+						case "f":
+							fpg_unload(fpgs_ids[j]);
+							fpgs_ids[j]=0;
+							fpgs_paths[j]="";
+						end
+						case "p":
+							map_unload(0,pngs_ids[j]);
+							pngs_ids[j]=0;
+							pngs_paths[j]="";
+						end
+						case "o":
+							song_unload(oggs_ids[j]);
+							oggs_ids[j]=0;
+							oggs_paths[j]="";
+						end
+						case "w":
+							sound_unload(wavs_ids[j]);
+							wavs_ids[j]=0;
+							wavs_paths[j]="";
+						end
+					end
+				end
+				case "s": //scrolls!
+					switch(linea[1])
+						case "s": //start
+							scroll_start(hasta_la_coma(1),hasta_la_coma(2),hasta_la_coma(3),hasta_la_coma(4),hasta_la_coma(5),hasta_la_coma(6));
+						end
+						case "u": //update
+							j=hasta_la_coma(1);
+							scroll[j].x0=hasta_la_coma(2);
+							scroll[j].x1=hasta_la_coma(3);
+							scroll[j].y0=hasta_la_coma(4);
+							scroll[j].y1=hasta_la_coma(5);
+							scroll[j].z=hasta_la_coma(6);
+						end
+						case "e": //end
+							scroll_stop(hasta_la_coma(1));
+						end
+					end
+				end
+				case "f":
+					//while(!key(_space)) frame; end
+					frame(net_frame_size);
+				end
+			end
+		end
+	end
+	//say("-- replay ended");
+	if(!streaming)
+		fclose(fp);
+	end
+	let_me_alone();
+End
+
+Function dummy_data_update(dummy);
+Begin
+	//basico
+	dummy.x=hasta_la_coma(2);
+	if((i=hasta_la_coma(3))!=net_eol) 
+		dummy.y=i; 
+		if((i=hasta_la_coma(4))!=net_eol)
+			if(dummy.file==0)
+				dummy.graph=pngs_ids[hasta_la_coma(4)];
+			else
+				dummy.graph=hasta_la_coma(4);
+			end		
+			if((i=hasta_la_coma(5))!=net_eol) 
+				dummy.alpha=i; 
+				if((i=hasta_la_coma(6))!=net_eol) 
+					dummy.size=i; 
+					if((i=hasta_la_coma(7))!=net_eol) 
+						dummy.z=i; 
+						if((i=hasta_la_coma(8))!=net_eol) 
+							dummy.angle=i*1000;
+							if((i=hasta_la_coma(9))!=net_eol) 
+								dummy.flags=i; 
+								if((i=hasta_la_coma(10))!=net_eol) 
+									dummy.file=fpgs_ids[i];
+									if((i=hasta_la_coma(11))!=net_eol) 
+										dummy.region=i; 
+										if((i=hasta_la_coma(12))!=net_eol) 
+											dummy.ctype=i; 
+											if((i=hasta_la_coma(13))!=net_eol) 
+												dummy.size_x=i; 
+												if((i=hasta_la_coma(14))!=net_eol) 
+													dummy.size_y=i; 
+												end
+											end
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+End
+
+Process replay_dummies();
+Begin
+	loop 
+		frame; 
+	end
+Ends
+
+Process net_server(); //acepta las conexiones de los usuarios
+Private
+    int socket_listen; // socket_listen to listen to requests
+    int connection=0;
+    int ipaddr, portaddr;
+Begin
+	unkillable=1;
+	frame;
+
+	say("Inicio servidor...");
+	fsock_init(0); // init fsock library
+	socket_listen=tcpsock_open(); // new socket
+	fsock_bind(socket_listen, net_port); // we'll listen @ port XD = 8868
+	tcpsock_listen(socket_listen, 5); // we'll listen for 5 clients
+	fsock_fdzero(0);
+	fsock_fdset(0,socket_listen);
+	net_status=1;
+
+	loop
+		if(fsock_select(0,-1,-1,0)>0)
+			if(!exists(type start_recording))
+				//iniciamos la captura de gráficos, sonidos y músicas en buffer
+				start_recording("");
+			end
+			
+			connection=tcpsock_accept(socket_listen, &ipaddr, &portaddr);
+			if(connection>0)
+				say("Nuevo cliente conectando...");
+				net_server_process_client(connection, ipaddr, portaddr);
+			end
+		end
+		fsock_fdset(0,socket_listen);
+		frame(net_frame_size);
+	end
+End
+
+Process net_server_process_client(int sock, int ipaddr, int portaddr); //procesa al cliente desde el servidor
+private
+    char msg[net_msg_size];
+	char msg_cliente[net_msg_cliente_size];
+    rlen, slen, n, pos, d1, d2, cnt;
+	estado;
+begin
+	unkillable=1;
+    net_clients++;
+
+	//say("Connection from ip "+ fsock_get_ipstr(ipaddr) + ":" + portaddr);
+
+    fsock_fdzero(1);
+    fsock_fdset(1,sock);
+	
+	priority=99;
+
+    while(msg_cliente!="FIN")
+    	// As every frame is executed separately, there's no problem with this
+        if (fsock_select(1,-1,-1,0)>0 && fsock_fdisset(1,sock))
+			msg_cliente="";
+			rlen=tcpsock_recv(sock,&msg_cliente,sizeof(msg_cliente));
+			if(rlen<=0)
+				break;
+			end
+			//say(timer[0]);
+			if(net_status==-1) //-1: finalizando fsock
+				msg="FIN";
+				tcpsock_send(sock, &msg, 3);
+			else
+				if(net_status==1) //permite conexiones
+					if(estado==0)
+						if(msg_cliente=="CON")
+							player=-1;
+							if(possible_players<20)
+								possible_players++;
+								player=possible_players;
+								gamepad[player].dont_reset=1;
+								gamepad[player].net_player=1;
+							end
+							if(player!=-1)
+								estado=1;
+								msg=itoa(player); //le devolvemos su número de player
+								say("Nuevo player:"+player);
+								tcpsock_send(sock, &msg, 1);
+							else
+								msg="ERR";
+								tcpsock_send(sock, &msg, 3);
+							end
+						end
+					end
+					if(estado==1)
+						switch(msg_cliente)
+							case "FIN":
+								estado=0; 
+								break;
+							end
+							case "RESYNC":
+								//signal(type start_recording,s_kill);
+								//start_recording("");
+								net_resync=1;
+								say("RESYNC!!");
+							end
+							default:
+								linea=msg_cliente;
+								from i=0 to num_buttons;
+									gamepad[player].buttons[i]=hasta_la_coma(i);
+								end
+							end
+						end
+						
+						//le enviamos el buffer de los graficos en pantalla
+						msg=net_buffer;
+						if(len(net_buffer)>sizeof(msg))
+							say("net_buffer > msg!!!!!");
+						end
+						if(len(net_buffer)>net_msg_biggest)
+							net_msg_biggest=len(net_buffer);
+							say("BIGGEST: "+net_msg_biggest);
+						end
+						
+						if(net_resync) msg=net_buffer="RESYNC;"; end
+						
+						tcpsock_send(sock, &msg, len(net_buffer));
+						//say("Server send: "+msg);
+					end
+				end
+			end
+        end
+        
+        fsock_fdset(1,sock); // We must reinclude the socket after the select
+
+        frame(net_frame_size);
+    end
+	say("Client disconnected!");
+onexit
+	fsock_close(sock); // Close the socket
+    net_clients--;
+end
+
+
+//client type: 0: viewer, 1: gamepad, 2: tablet
+
+Process net_client(string ip_server,int client_type);
+Private
+    int socket, rlen; // socket_listen to listen to requests
+    char msg[net_msg_size];
+	char msg_cliente[net_msg_cliente_size];
+	estado;
+	esperando;
+	tiempo_restante;
+	segundos_restantes;
+Begin
+	unkillable=1;
+	let_me_alone();
+	controlador(0);
+	fsock_init(0); // init fsock library
+    socket=tcpsock_open(); // new socket
+	say("Iniciando cliente...");
+	say("Creando socket... ("+ip_server+")");
+    if(tcpsock_connect(socket,ip_server,net_port)!=0)
+        say("Sin conexion");
+        exit();
+    end
+	say("Socket creado...");
+
+	priority=-99;
+	
+    loop
+		msg="";
+	
+      	// In the real world, you'd loop here until you got the full package
+		if(estado==0)
+			msg_cliente="CON";
+			tcpsock_send(socket, &msg_cliente, sizeof(msg_cliente));
+			say("Conectando...");
+			msg="";
+			rlen=tcpsock_recv(socket, &msg, sizeof(msg));
+			if(rlen>0)
+				if(atoi(msg)>0 and atoi(msg)<6)
+					player=atoi(msg);
+					say("Player adquirido: "+msg);
+					estado=1;
+					net_resync=1;
+				else
+					break;
+					say("No se ha podido conectar");
+				end
+			end
+		else //estado:1
+			//mandamos controles! :D
+			msg_cliente="";
+			if(net_resync==1)
+				msg_cliente="RESYNC";
+			else
+				from i=0 to num_buttons;
+					if(i>0)
+						msg_cliente+=",";
+					end
+					msg_cliente+=itoa(gamepad[0].buttons[i]);
+				end
+			end
+			
+			tcpsock_send(socket, &msg_cliente, sizeof(msg_cliente));
+			//say("Client send: "+msg);
+
+			msg="";
+			rlen=tcpsock_recv(socket, &msg, sizeof(msg));
+					
+			if(rlen<=0)
+				break;
+			end
+
+			net_buffer=msg;
+			net_buffer_last_pos=0;
+			
+			if(net_buffer=="RESYNC;")
+				//net_resync=1;
+				net_let_me_alone();
+				net_resync=0;
+				//frame(net_frame_size);
+				play_replay("");
+			end
+			
+			//say("Client received: "+msg);
+		end
+        frame(net_frame_size);
+    end
+	say("Quitting!");
+	exit();
+onexit
+	fsock_quit(); // Now close the fsock lib
+end
+
+Function net_sound_play(tipo,repeats);
+Begin
+	j=sound_play(wavs_ids[tipo],0);
+	from i=1 to 10;
+		if(sound_messages[i][1]==0)
+			sound_messages[i][1]=tipo;
+			sound_messages[i][2]=repeats;
+			sound_messages[i][3]=j; //canal
+			break;
+		end
+	end
+	return j;
+End
+
+Function net_sound_stop(canal);
+Begin
+	from i=1 to 10;
+		if(sound_messages[i][1]==0)
+			sound_messages[i][1]=-1;
+			sound_messages[i][2]=0;
+			sound_messages[i][3]=canal; //canal
+			break;
+		end
+	end
+	return sound_stop(canal);
+End
+
+Function kill_dummies();
+Begin
+	say("kill dumimes!");
+	while(i=get_id(type replay_dummies))
+		signal(i,s_kill);
+	end
+End
+
+Function net_song_play(ogg,repeats);
+Begin
+	song_play(ogg,repeats);
+	from i=1 to 10;
+		if(song_messages[i]==0)
+			song_messages[i]=ogg;
+			break;
+		end
+	end
+End
+
+Function net_song_stop();
+Begin
+	song_stop();
+	from i=1 to 10;
+		if(song_messages[i]==0)
+			song_messages[i]=-1;
+			break;
+		end
+	end
+End
+
+Function net_start_scroll(a1,a2,a3,a4,a5,a6);
+Begin
+	//no creo que vayamos a utilizar esto nunca en el modo de red...
+	scroll_start(a1,a2,a3,a4,a5,a6);
+	scrolls_parms[a1]=""+a2+","+a3+","+a4+","+a5+","+a6;
+	scrolls_enabled[a1]=1;
+	scrolls_changed=1;
+End
+
+Function net_stop_scroll(i);
+Begin
+	scroll_stop(i);
+	scrolls_enabled[i]=0;
+	scrolls_changed=1;
+	scrolls_parms[i]="";
+End
+
+Function net_fpg_load(string fpg);
+Begin
+	i=fpg_load(fpg);
+	from j=1 to net_num_resources;
+		if(fpgs_ids[j]==0)
+			fpgs_ids[j]=i;
+			fpgs_paths[j]=fpg;
+			fpgs_changed=1;
+			break;
+		end
+	end
+	return i;
+End
+
+Function net_fpg_unload(int id_fpg);
+Begin
+	fpg_unload(id_fpg);
+	from j=1 to net_num_resources;
+		if(fpgs_ids[j]==id_fpg)
+			fpgs_ids[j]=0;
+			fpgs_paths[j]="";
+			fpgs_changed=1;
+			break;
+		end
+	end
+	return 0;
+End
+
+Function net_sound_load(string mi_wav);
+Begin
+	i=sound_load(mi_wav);
+	from j=1 to net_num_resources;
+		if(wavs_ids[j]==0)
+			wavs_ids[j]=i;
+			wavs_paths[j]=mi_wav;
+			wavs_changed=1;
+			break;
+		end
+	end
+	//return i;
+	return j;
+End
+
+Function net_sound_unload(int id_wav);
+Begin
+	/*sound_unload(id_wav);
+	from j=1 to net_num_resources;
+		if(wavs_ids[j]==id_wav)
+			wavs_ids[j]=0;
+			wavs_paths[j]="";
+			wavs_changed=1;
+			break;
+		end
+	end*/
+	
+	sound_unload(wavs_ids[id_wav]);
+	wavs_ids[j]=0;
+	wavs_paths[j]="";
+	wavs_changed=1;
+	
+	return 0;
+End
+
+Function net_load_ogg(string mi_ogg);
+Begin
+	i=song_load(mi_ogg);
+	from j=1 to net_num_resources;
+		if(oggs_ids[j]==0)
+			oggs_ids[j]=i;
+			oggs_paths[j]=mi_ogg;
+			oggs_changed=1;
+			break;
+		end
+	end
+	return i;
+End
+
+Function net_unload_ogg(int id_ogg);
+Begin
+	song_unload(id_ogg);
+	from j=1 to net_num_resources;
+		if(oggs_ids[j]==id_ogg)
+			oggs_ids[j]=0;
+			oggs_paths[j]="";
+			oggs_changed=1;
+			break;
+		end
+	end
+	return 0;
+End
+
+Function net_png_load(string mi_png);
+Begin
+	i=png_load(mi_png);
+	from j=1 to net_num_resources;
+		if(pngs_ids[j]==0)
+			pngs_ids[j]=i;
+			pngs_paths[j]=mi_png;
+			pngs_changed=1;
+			break;
+		end
+	end
+	return i;
+End
+
+Function net_png_unload(file,id_png);
+Begin
+	map_unload(file,id_png);
+	from j=1 to net_num_resources;
+		if(pngs_ids[j]==id_png)
+			pngs_ids[j]=0;
+			pngs_paths[j]="";
+			pngs_changed=1;
+			break;
+		end
+	end
+	return 0;
+End
+
+Process net_screen_put(file,graph);
+Begin
+	net_screen_clear();
+	id_net_screen_put=id;
+	
+	screen_background_changed=1;
+	screen_background_file=file;
+	screen_background_graph=graph;
+	
+	//temp:
+	screen_put(file,graph);
+	return;
+	
+	unkillable=1;
+	z=100000;
+	x=640;
+	y=360;
+	loop frame(20000); end
+End
+
+Process net_screen_clear();
+Begin
+	//temp:
+	screen_clear();
+	
+	screen_background_changed=1;
+	screen_background_file=0;
+	screen_background_graph=0;
+	
+	if(exists(id_net_screen_put))
+		signal(id_net_screen_put,s_kill); 
+	end
+End
+
+Function net_region_define(a1,a2,a3,a4,a5);
+Begin
+	region_define(a1,a2,a3,a4,a5);
+	regions_parms[a1]=""+a2+","+a3+","+a4+","+a5;
+	regions_changed=1;
+End
+
+Function net_add_buffer(string line);
+Begin
+	if(saving_replay)
+		fputs(replay_file,line);
+	else
+		net_buffer+=line+";";
+	end
+End
+
+
+#ELSE
+//no NETPLAY:
+#DEFINE net_sound_stop sound_stop
+#DEFINE net_sound_play sound_play
+#DEFINE net_sound_load sound_load
+#DEFINE net_sound_unload sound_unload
+#DEFINE net_song_stop song_stop
+#DEFINE net_song_play song_play
+#DEFINE net_region_define region_define
+#DEFINE net_screen_clear screen_clear
+#DEFINE net_screen_put screen_put
+#DEFINE net_png_load png_load
+#DEFINE net_png_unload map_unload
+#DEFINE net_load_ogg song_load
+#DEFINE net_unload_ogg song_unload
+#DEFINE net_fpg_load fpg_load
+#DEFINE net_fpg_unload fpg_unload
+#DEFINE net_stop_scroll scroll_stop
+#DEFINE net_start_scroll scroll_start
+#DEFINE play_replay say
+
+Function start_recording(string fichero);
+Begin
+	say("Recording not available!");
+End
+
+Function stop_recording();
+Begin
+	say("Recording not available!");
+End
+
+#ENDIF
+
+Function net_let_me_alone();
+Private
+	int my_i;
+Begin
+	while(my_i=get_id(0))
+		if(exists(my_i) and my_i!=father and my_i!=id)
+			if(my_i.unkillable==0)
+				signal(my_i,s_kill);
+			end
+		end
+	end
+End
+#ENDIF

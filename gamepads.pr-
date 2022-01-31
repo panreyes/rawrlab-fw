@@ -1,0 +1,858 @@
+// Gamepad library v0.9
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+// Usage:
+//  gamepads_init();
+//  get_button(player,button);
+//    player: Number of the player.
+//    button: Button identifier (check the Const list, the buttons start with "b_" )
+
+// Options:
+#IFNDEF GAMEPADS_DEFAULT_MAX_PLAYERS
+	#DEFINE GAMEPADS_DEFAULT_MAX_PLAYERS 8
+#ENDIF
+#IFNDEF GAMEPADS_DEFAULT_BUTTON_SIZE
+	#DEFINE GAMEPADS_DEFAULT_BUTTON_SIZE 80
+#ENDIF
+
+// Compatibilty layers from PixTudio with BennuGD1/2
+include "../../../libs/rawrlab-fw/pxtcompat.h";
+
+#IFDEF __BENNUGD2__
+	DECLARE Process dedo(local_type x,local_type y); end
+	DECLARE Process boton_tactil(local_type x,local_type y,int graph,player,boton); end
+#ENDIF
+
+#IF PLATAFORMA == webos
+	#define USE_MOD_JOY 1
+#ENDIF
+
+#IFDEF USE_MOD_JOY
+	import "mod_joy";
+	#DEFINE CONTROLLER_INVALID 0
+	#DEFINE controller_num joy_number
+	#DEFINE controller_close devnull
+	#DEFINE controller_open devnull
+	#IFDEF __BENNUGD__
+		#DEFINE controller_getaxis joy_getaxis
+		#DEFINE controller_getbutton joy_getbutton
+		#DEFINE joy_get_hat joy_gethat
+	#ENDIF
+	#IFDEF __PIXTUDIO__
+		// We need mod_gamecontroller for constants
+		import "mod_gamecontroller";
+		#DEFINE controller_getaxis joy_get_axis
+		#DEFINE controller_getbutton joy_get_button
+	#ENDIF
+#ELSE
+	#DEFINE USING_GAME_CONTROLLER 1
+	#IFDEF __BENNUGD2__
+		import "libmod_gamecontroller";
+	#ENDIF
+	#IFDEF __PIXTUDIO__
+		import "mod_gamecontroller";
+	#ENDIF
+#ENDIF
+
+Const
+#IFDEF USING_GAME_CONTROLLER
+	using_mod_game_controller=1;
+#ELSE
+	using_mod_game_controller=0;
+#ENDIF
+
+	joystick_deadzone=10000;
+
+	max_num_gamepads=20;
+	num_buttons=26;
+	num_buttons_no_axis=20;
+	
+	// Spanish
+	b_cualquiera=0;
+	b_izquierda=1;
+	b_derecha=2;
+	b_arriba=3;
+	b_abajo=4;
+	b_salir=20;
+	
+	// English
+	b_any=0;
+	b_left=1;
+	b_right=2;
+	b_up=3;
+	b_down=4;
+
+	b_1=5;
+	b_2=6;
+	b_3=7;
+	b_4=8;
+	b_l1=9;
+	b_r1=10;
+	b_l2=11;
+	b_r2=12;
+	b_l3=13;
+	b_r3=14;
+	b_dpad_left=15;
+	b_dpad_right=16;
+	b_dpad_up=17;
+	b_dpad_down=18;
+	b_exit=20;
+	
+	b_left_stick_axis_x=21;
+	b_left_stick_axis_y=22;
+	b_left_stick_angle=23;
+	b_right_stick_axis_x=24;
+	b_right_stick_axis_y=25;
+	b_right_stick_angle=26;
+	
+	// Events
+	on_press=1;
+	on_release=2;
+End
+
+Global
+	int gamepads_configured=0;
+	
+	#IFNDEF USING_GAME_CONTROLLER
+		#IFDEF __BENNUGD__
+			// Para mod_joy de SDL1
+			CONTROLLER_BUTTON_DPAD_LEFT=b_left;
+			CONTROLLER_BUTTON_DPAD_RIGHT=b_right;
+			CONTROLLER_BUTTON_DPAD_UP=b_up;
+			CONTROLLER_BUTTON_DPAD_DOWN=b_down;
+			CONTROLLER_BUTTON_X=b_1;
+			CONTROLLER_BUTTON_B=b_2;
+			CONTROLLER_BUTTON_A=b_3;
+			CONTROLLER_BUTTON_Y=b_4;
+			CONTROLLER_BUTTON_LEFTSHOULDER=b_l1;
+			CONTROLLER_BUTTON_RIGHTSHOULDER=b_r1;
+			CONTROLLER_BUTTON_LEFTSTICK=b_l3;
+			CONTROLLER_BUTTON_RIGHTSTICK=b_r3;
+			CONTROLLER_BUTTON_BACK=b_exit;
+			CONTROLLER_BUTTON_START=b_exit;
+			CONTROLLER_BUTTON_GUIDE=b_exit;
+			CONTROLLER_AXIS_TRIGGERLEFT=0;
+			CONTROLLER_AXIS_TRIGGERRIGHT=0;
+			CONTROLLER_AXIS_RIGHTX=b_right_stick_axis_x;
+			CONTROLLER_AXIS_RIGHTY=b_right_stick_axis_y;
+			CONTROLLER_AXIS_LEFTX=0;
+			CONTROLLER_AXIS_LEFTY=1;
+		#ELSE
+			// Para mod_joy de SDL2...
+			/*CONTROLLER_BUTTON_DPAD_LEFT=b_left;
+			CONTROLLER_BUTTON_DPAD_RIGHT=b_right;
+			CONTROLLER_BUTTON_DPAD_UP=b_up;
+			CONTROLLER_BUTTON_DPAD_DOWN=b_down;
+			CONTROLLER_BUTTON_X=b_1;
+			CONTROLLER_BUTTON_B=b_2;
+			CONTROLLER_BUTTON_A=b_3;
+			CONTROLLER_BUTTON_Y=b_4;
+			CONTROLLER_BUTTON_LEFTSHOULDER=b_l1;
+			CONTROLLER_BUTTON_RIGHTSHOULDER=b_r1;
+			CONTROLLER_BUTTON_LEFTSTICK=b_l3;
+			CONTROLLER_BUTTON_RIGHTSTICK=b_r3;
+			CONTROLLER_BUTTON_BACK=b_exit;
+			CONTROLLER_BUTTON_START=b_exit;
+			CONTROLLER_BUTTON_GUIDE=b_exit;
+			CONTROLLER_AXIS_TRIGGERLEFT=0;
+			CONTROLLER_AXIS_TRIGGERRIGHT=0;
+			CONTROLLER_AXIS_RIGHTX=b_right_stick_axis_x;
+			CONTROLLER_AXIS_RIGHTY=b_right_stick_axis_y;
+			CONTROLLER_AXIS_LEFTX=0;
+			CONTROLLER_AXIS_LEFTY=1;*/
+		#ENDIF
+	#ENDIF
+
+	int joysticks[50];
+	int max_possible_players=GAMEPADS_DEFAULT_MAX_PLAYERS;
+
+	struct gamepad[max_num_gamepads];
+		int buttons[num_buttons];
+		int buttons_on_press[num_buttons];
+		int buttons_on_release[num_buttons];
+		int dont_reset=0;
+		int net_player=0;
+	end
+
+#IFDEF __NINTENDO_SWITCH__
+	int b_accept=b_3;
+	int b_cancel=b_2;
+	int b_aceptar=b_3;
+	int b_cancelar=b_2;
+#ELSE
+	int b_accept=b_2;
+	int b_cancel=b_3;
+	int b_aceptar=b_2;
+	int b_cancelar=b_3;
+#ENDIF
+
+	int fpg_gamepad;
+	
+	int graph_dedo;
+	int graph_boton_1;
+	int graph_boton_2;
+	int graph_boton_3;
+	
+	int graph_boton_izquierda;
+	int graph_boton_derecha;
+	int graph_boton_arriba;
+	int graph_boton_abajo;
+	
+	int id_gamepad;
+	int gamepad_button_separation=40;
+	int gamepad_button_size=GAMEPADS_DEFAULT_BUTTON_SIZE;
+	int gamepad_botones=3;
+	
+	int num_gamepads_antes;
+	int num_gamepads_ahora;
+	
+	int no_vgamepad=0;
+	
+	int key_b_izquierda=_LEFT;
+	int key_b_derecha=_RIGHT;
+	int key_b_arriba=_UP;
+	int key_b_abajo=_DOWN;
+	int key_b_1=_A;
+	int key_b_2=_S;
+	int key_b_3=_D;
+	int key_b_4=_Q;
+	int key_b_l1=_W;
+	int key_b_r1=_E;
+	int key_b_l2=_Z;
+	int key_b_r2=_X;
+	int key_b_l3=_E;
+	int key_b_r3=_R;
+	
+	int key_b_salir1=_ESC;
+	int key_b_salir2=_ENTER;
+	
+	int id_controlador;
+	int evento_cambio_num_gamepads;
+	int retraso_comprobacion_gamepads;
+End
+
+Process gamepads_init();
+Private
+	int joy_id;
+	int axis_x; 
+	int axis_y;
+	int pov, povx, povy;
+Begin
+	if(!gamepads_configured)
+		gamepads_configure();
+	end
+
+	if(exists(id_controlador))
+		signal(id_controlador,s_kill);
+	end
+	id_controlador=id;
+	
+	priority=10;
+	unkillable=1;
+	
+	#IFDEF TACTIL
+	prepara_gamepad_virtual();
+	gamepad_virtual();
+	#ENDIF
+	
+	Loop
+		//cierre y apertura de gamepads al cambiar de número de controladores
+		
+		#IFDEF USING_GAME_CONTROLLER
+			num_gamepads_antes = num_gamepads_ahora;
+			num_gamepads_ahora = controller_num();
+			if(num_gamepads_antes != num_gamepads_ahora)
+				if(num_gamepads_antes>num_gamepads_ahora)
+					evento_cambio_num_gamepads=num_gamepads_ahora-num_gamepads_antes;
+				end
+				
+				say("Hotplug de gamepads! Antes: "+num_gamepads_antes+", Ahora:"+num_gamepads_ahora);
+				
+				//reset de joysticks/gamepads
+				x=0;
+				from i=0 to 50; 
+					controller_close(joysticks[i]);
+					joysticks[i]=-1;
+				end
+				
+				//colocamos los gamepads tal como caigan
+				from i=0 to 49; 
+					j=controller_open(i);
+					if(j!=CONTROLLER_INVALID)
+						x++;
+						joysticks[x]=j;
+					end
+				end
+									
+				#IFNDEF __NINTENDO_SWITCH__
+				possible_players=num_gamepads_ahora+1; //añadiendo teclado
+				#ELSE
+				possible_players=num_gamepads_ahora; //sin teclado
+				#ENDIF
+				if(possible_players>max_possible_players) possible_players=max_possible_players; end
+				say("Gamepads: "+num_gamepads_ahora+". Posibles jugadores: "+possible_players);
+				
+				//los autoreasignamos sino los gestionamos de otra forma manual
+				#IFNDEF GAMEPADS_DONT_AUTOASSIGN
+					gamepads_autoassign();
+				#ENDIF				
+			end
+		#ELSE
+		
+			//¿Qué es esta porquería? ...
+			/* 
+			possible_players=2;
+			num_gamepads_ahora=2;
+			joysticks[0]=1;
+			joysticks[1]=1;
+			joysticks[2]=1;
+			p[1].control=1;
+			*/
+		#ENDIF
+
+		//en android, si estamos en 2º plano, nos vamos al aire
+		if(os_id==1003 and !focus_status)
+			#IFDEF ANDROID_EXIT_FUNCTION
+				salir_android();
+			#ELSE
+				exit();
+			#ENDIF
+		end
+		
+		//reseteo botones
+		from i=0 to max_num_gamepads;
+			if(gamepad[i].dont_reset==0)
+				from j=0 to num_buttons;
+					gamepad[i].buttons[j]=0;
+				end
+			end
+		end
+		
+		//controles de los jugadores:
+		from player=1 to num_gamepads_ahora+1; //contamos desde player 1 hasta gamepads + 1. esto antes era possible_players, lo cual es erróneo si no hay teclado!
+		
+		//básicamente leemos los gamepads de 0 a x y lo introducimos en gamepad[] de 1 a x+1
+		
+			//gestión joysticks:
+			if(player>1 and gamepad[player].net_player==0)
+				joy_id=joysticks[player-1];
+				if(controller_getaxis(joy_id,CONTROLLER_AXIS_LEFTX)!=CONTROLLER_INVALID or !using_mod_game_controller)
+					/*
+					say("joyid: "+joy_id);
+					say("player:"+player);
+					say("using:"+using_mod_game_controller);
+					say(controller_getbutton(joy_id,CONTROLLER_BUTTON_DPAD_LEFT));
+					say(controller_getaxis(joy_id,CONTROLLER_AXIS_LEFTX));
+					*/
+					
+					// ANALOGICO Y DIGITAL
+					axis_x=controller_getaxis(joy_id,CONTROLLER_AXIS_LEFTX);
+					axis_y=controller_getaxis(joy_id,CONTROLLER_AXIS_LEFTY);
+					if(axis_x<-joystick_deadzone or controller_getbutton(joy_id,CONTROLLER_BUTTON_DPAD_LEFT)) gamepad[player].buttons[b_izquierda]=1; end
+					if(axis_x>joystick_deadzone or controller_getbutton(joy_id,CONTROLLER_BUTTON_DPAD_RIGHT)) gamepad[player].buttons[b_derecha]=1; end
+					if(axis_y<-joystick_deadzone or controller_getbutton(joy_id,CONTROLLER_BUTTON_DPAD_UP)) gamepad[player].buttons[b_arriba]=1; end
+					if(axis_y>joystick_deadzone or controller_getbutton(joy_id,CONTROLLER_BUTTON_DPAD_DOWN)) gamepad[player].buttons[b_abajo]=1; end
+					
+					#IFDEF USE_MOD_JOY
+						// D-PAD
+						POV=joy_get_hat(joy_id,0); POVx=0; POVy=0;
+						IF (POV==1) POVy=1; END // arriba
+						IF (POV==3) POVy=1; POVx=2; END // der
+						IF (POV==9) POVy=1; POVx=1; END // izq
+						IF (POV==4) POVy=2; END // abajo
+						IF (POV==6) POVy=2; POVx=2; END // der
+						IF (POV==12) POVy=2; POVx=1; END // izq
+						IF (POV==2) POVx=2; END // der
+						IF (POV==8) POVx=1; END // izq
+				
+						If(povx==1) gamepad[player].buttons[b_izquierda]=1; End
+						If(povx==2) gamepad[player].buttons[b_derecha]=1; End
+						If(povy==1) gamepad[player].buttons[b_arriba]=1; End
+						If(povy==2) gamepad[player].buttons[b_abajo]=1; End
+					#ENDIF
+					
+					//BOTONES
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_X)==1) gamepad[player].buttons[b_1]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_A)==1) gamepad[player].buttons[b_2]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_B)==1) gamepad[player].buttons[b_3]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_Y)==1) gamepad[player].buttons[b_4]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_LEFTSHOULDER)==1) gamepad[player].buttons[b_l1]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_RIGHTSHOULDER)==1) gamepad[player].buttons[b_r1]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_LEFTSTICK)==1) gamepad[player].buttons[b_l3]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_RIGHTSTICK)==1) gamepad[player].buttons[b_r3]=1; End
+					/*If(controller_getbutton(joy_id,CONTROLLER_BUTTON_BACK)==1 or 
+						controller_getbutton(joy_id,CONTROLLER_BUTTON_START)==1 
+						or controller_getbutton(joy_id,CONTROLLER_BUTTON_GUIDE)==1) gamepad[player].buttons[b_salir]=1; End		*/
+					If(controller_getbutton(joy_id,CONTROLLER_BUTTON_BACK)==1 or 
+						controller_getbutton(joy_id,CONTROLLER_BUTTON_START)==1) gamepad[player].buttons[b_salir]=1; End
+					If(controller_getbutton(joy_id,CONTROLLER_AXIS_TRIGGERLEFT)==1) gamepad[player].buttons[b_l2]=1; End //???
+					If(controller_getbutton(joy_id,CONTROLLER_AXIS_TRIGGERRIGHT)==1) gamepad[player].buttons[b_r2]=1; End //???
+						
+					//LEFT STICK ANGLE AND AXIS:
+					gamepad[player].buttons[b_left_stick_axis_x]=axis_x;
+					gamepad[player].buttons[b_left_stick_axis_y]=axis_y;
+					if(abs(axis_x)>joystick_deadzone or abs(axis_y)>joystick_deadzone)
+						gamepad[player].buttons[b_left_stick_angle]=fget_angle(0,0,axis_x,axis_y);
+					end
+					
+					//IF STICK IS IN THE DEADZONE, READ ANGLE FROM DPAD
+					if(axis_x<joystick_deadzone and axis_y<joystick_deadzone)
+						if(gamepad[player].buttons[b_up])
+							if(gamepad[player].buttons[b_right])
+								gamepad[player].buttons[b_left_stick_angle]=45000;
+							elseif(gamepad[player].buttons[b_left])
+								gamepad[player].buttons[b_left_stick_angle]=135000;
+							else
+								gamepad[player].buttons[b_left_stick_angle]=90000;
+							end
+						elseif(gamepad[player].buttons[b_down])
+							if(gamepad[player].buttons[b_right])
+								gamepad[player].buttons[b_left_stick_angle]=315000;
+							elseif(gamepad[player].buttons[b_left])
+								gamepad[player].buttons[b_left_stick_angle]=225000;
+							else
+								gamepad[player].buttons[b_left_stick_angle]=270000;
+							end
+						elseif(gamepad[player].buttons[b_left])
+							gamepad[player].buttons[b_left_stick_angle]=180000;
+						else
+							gamepad[player].buttons[b_left_stick_angle]=0;
+						end
+					end		
+					
+					//RIGHT STICK ANGLE AND AXIS:
+					axis_x=controller_getaxis(joy_id,CONTROLLER_AXIS_RIGHTX);
+					axis_y=controller_getaxis(joy_id,CONTROLLER_AXIS_RIGHTY);
+					gamepad[player].buttons[b_right_stick_axis_x]=axis_x;
+					gamepad[player].buttons[b_right_stick_axis_y]=axis_y;
+					if(abs(axis_x)>joystick_deadzone or abs(axis_y)>joystick_deadzone)
+						gamepad[player].buttons[b_right_stick_angle]=fget_angle(0,0,axis_x,axis_y);
+					end
+				end
+			end
+			
+			//gestión teclado:
+			#IFNDEF __NINTENDO_SWITCH__
+			if(player==1)
+				If(key(key_b_izquierda)) gamepad[player].buttons[b_izquierda]=1; End
+				If(key(key_b_derecha)) gamepad[player].buttons[b_derecha]=1; End
+				If(key(key_b_arriba)) gamepad[player].buttons[b_arriba]=1; End
+				If(key(key_b_abajo)) gamepad[player].buttons[b_abajo]=1; End
+				If(key(key_b_1)) gamepad[player].buttons[b_1]=1; End
+				If(key(key_b_2)) gamepad[player].buttons[b_2]=1; End
+				If(key(key_b_3)) gamepad[player].buttons[b_3]=1; End
+				If(key(key_b_4)) gamepad[player].buttons[b_4]=1; End
+				If(key(key_b_l1)) gamepad[player].buttons[b_l1]=1; End
+				If(key(key_b_r1)) gamepad[player].buttons[b_r1]=1; End
+				If(key(key_b_l2)) gamepad[player].buttons[b_l2]=1; End
+				If(key(key_b_r2)) gamepad[player].buttons[b_r2]=1; End
+				If(key(key_b_l3)) gamepad[player].buttons[b_l3]=1; End
+				If(key(key_b_r3)) gamepad[player].buttons[b_r3]=1; End
+				
+				//fake sticks!
+				if(gamepad[player].buttons[b_up])
+					if(gamepad[player].buttons[b_right])
+						gamepad[player].buttons[b_left_stick_angle]=45000;
+					elseif(gamepad[player].buttons[b_left])
+						gamepad[player].buttons[b_left_stick_angle]=135000;
+					else
+						gamepad[player].buttons[b_left_stick_angle]=90000;
+					end
+				elseif(gamepad[player].buttons[b_down])
+					if(gamepad[player].buttons[b_right])
+						gamepad[player].buttons[b_left_stick_angle]=315000;
+					elseif(gamepad[player].buttons[b_left])
+						gamepad[player].buttons[b_left_stick_angle]=225000;
+					else
+						gamepad[player].buttons[b_left_stick_angle]=270000;
+					end
+				elseif(gamepad[player].buttons[b_left])
+					gamepad[player].buttons[b_left_stick_angle]=180000;
+				else
+					gamepad[player].buttons[b_left_stick_angle]=0;
+				end
+				
+				if(key(key_b_salir1) or key(key_b_salir2)) gamepad[player].buttons[b_salir]=1; end
+			end
+			#ENDIF
+			
+			//gestión anykeys y eventos:
+			from i=1 to num_buttons_no_axis;
+				if(gamepad[player].buttons[i])
+					gamepad[player].buttons[b_cualquiera]++;
+					
+					if(gamepad[player].buttons_on_press[i]<30)
+						gamepad[player].buttons_on_press[i]++;
+					end
+					gamepad[player].buttons_on_release[i]=0;
+				else
+					gamepad[player].buttons_on_press[i]=0;
+					if(gamepad[player].buttons_on_release[i]<30)
+						gamepad[player].buttons_on_release[i]++;
+					end
+				end
+			end
+		end //fin for player
+				
+		//gestión anyplayer keys:
+		from j=0 to num_buttons_no_axis;
+			gamepad[0].buttons_on_press[j]=0;
+			gamepad[0].buttons_on_release[j]=0;
+		end
+		from i=1 to num_gamepads_ahora+1;
+			from j=0 to num_buttons_no_axis;
+				if(gamepad[i].buttons[j]==1)
+					gamepad[0].buttons[j]++;
+				end
+				if(gamepad[i].buttons_on_press[j]==1)
+					gamepad[0].buttons_on_press[j]=1;
+				end
+				if(gamepad[i].buttons_on_release[j]==1)
+					gamepad[0].buttons_on_release[j]=1;
+				end
+			end
+		end
+
+		//test!
+		//controller_flush();
+
+		Frame;
+	End
+End
+
+Function gamepads_configure();
+Private
+	int njoys;
+Begin
+	gamepads_configured=1;
+
+	from i=1 to max_possible_players; p[i].control=-1; end
+	from i=0 to 50;	joysticks[i]=-1; end
+	
+	p[0].control=0; //menús
+	possible_players=0;
+		
+	i=0;
+	j=0;
+	
+	if(os_id==1003) //os_android! (en número por compatibilidad)
+		key_b_salir1=102; //keycodeback
+		key_b_salir2=_ESC;
+	end
+	
+	
+	#IFDEF TACTIL
+		possible_players=1;
+		p[1].control=1;
+	#ELSE
+		if(!using_mod_game_controller)
+			possible_players=controller_num();
+			num_gamepads_ahora=possible_players;
+			if(num_gamepads_ahora>0)
+				from i=1 to num_gamepads_ahora; joysticks[i]=i-1; end
+			end
+		end
+	#ENDIF
+	
+	if(os_id==0) //windows
+		possible_players++;
+	end
+	
+	if(possible_players>max_possible_players)
+		possible_players=max_possible_players;
+	end
+	
+	
+	#IFNDEF __NINTENDO_SWITCH__
+	if(possible_players<1) 
+		possible_players=1; 
+	end //siempre habrá un jugador como mínimo, sea táctil o teclado
+	#ENDIF
+	
+	gamepads_autoassign();
+		
+	say("OS ID: "+os_id);
+	say("Possible players: "+possible_players);
+	
+	gamepads_init();
+End
+
+Function gamepads_autoassign();
+Begin
+	if(possible_players>0)
+		from i=1 to possible_players;
+			p[i].control=i;
+			say(i);
+		end
+		#IFNDEF __NINTENDO_SWITCH__
+			/*i=p[1].control;
+			p[1].control=p[possible_players].control;
+			p[possible_players].control=i;*/
+		#ENDIF
+	end
+End
+
+Process gamepad_virtual();
+Private
+	int foo;
+Begin
+	if(exists(id_gamepad)) 
+		signal(id_gamepad,s_kill);
+	end
+	id_gamepad=id;
+	unkillable=1;
+	
+	if(no_vgamepad==0)
+		boton_tactil(gamepad_button_separation*2,alto_pantalla-(gamepad_button_separation*3),graph_boton_arriba,1,b_arriba);
+		boton_tactil(gamepad_button_separation*1,alto_pantalla-(gamepad_button_separation*2),graph_boton_izquierda,1,b_izquierda);
+		boton_tactil(gamepad_button_separation*3,alto_pantalla-(gamepad_button_separation*2),graph_boton_derecha,1,b_derecha);
+		boton_tactil(gamepad_button_separation*2,alto_pantalla-gamepad_button_separation,graph_boton_abajo,1,b_abajo);
+	
+		boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(7*pi/6,gamepad_button_separation),alto_pantalla-(gamepad_button_separation*2)+get_disty(7*pi/6,gamepad_button_separation*2/3),graph_boton_1,1,b_1);
+		boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(11*pi/6,gamepad_button_separation),(alto_pantalla-gamepad_button_separation*2)+get_disty(11*pi/6,gamepad_button_separation*2/3),graph_boton_2,1,b_2);
+		if(gamepad_botones==3)
+			boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(pi/2,gamepad_button_separation/1),alto_pantalla-(gamepad_button_separation*2)+get_disty(pi/2,gamepad_button_separation/1),graph_boton_3,1,b_3);
+		end
+	end
+	
+	priority=7;
+	loop	
+		//en android, si estamos en 2º plano, nos vamos al aire
+		//esto ya figura en el código del controlador
+		/*
+		if(os_id==1003 and !focus_status)
+			salir_android();
+		end
+		*/
+	
+#IFDEF TACTIL
+		for(foo=0; foo<10; foo++)
+			if(multi_info(foo, "ACTIVE") > 0)
+				dedo(multi_info(foo, "X"),multi_info(foo, "Y"));
+			end
+		end
+		
+		if(mouse.left) dedo(mouse.x,mouse.y); end
+#ELSE
+		if(mouse.left) dedo(mouse.x,mouse.y); end
+#ENDIF
+		
+		frame;
+	end
+End
+
+Process dedo(local_type x,local_type y);
+Begin
+	file=fpg_gamepad;
+	graph=graph_dedo;
+	alpha=0;
+	frame;
+End
+
+Process boton_tactil(local_type x,local_type y,int graph,player,boton);
+Begin
+	unkillable=1;
+	priority=5;
+	z=-999999;
+	alpha=128;
+	file=fpg_gamepad;
+	while(exists(father))
+		if(collision_box(type dedo))
+			gamepad[player].buttons[boton]++;
+			gamepad[0].buttons[boton]++;
+		end
+		frame; 
+	end
+End
+
+#IFNDEF __BENNUGD2__
+Function pinta_gamepad();
+Private
+	int foo;
+	int foo2;
+Begin
+	graph_dedo=map_new(gamepad_button_size*2/3,gamepad_button_size*2/3,32);
+	drawing_color(rgb(128,128,128));
+	drawing_map(0,graph_dedo);
+	draw_fcircle(gamepad_button_size/3,gamepad_button_size/3,gamepad_button_size/3-1);
+
+	if(os_id!=1003) mouse.graph=graph_dedo; end
+	
+	graph_boton_1=map_new(gamepad_button_size*1.5,gamepad_button_size*1.5,32);
+	drawing_map(0,graph_boton_1);
+	drawing_color(rgb(0,255,0));
+	draw_fcircle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	drawing_color(rgb(255,255,255));
+	draw_circle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	
+	graph_boton_2=map_new(gamepad_button_size*1.5,gamepad_button_size*1.5,32);
+	drawing_map(0,graph_boton_2);
+	drawing_color(rgb(255,0,0));
+	draw_fcircle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	drawing_color(rgb(255,255,255));
+	draw_circle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	
+	graph_boton_3=map_new(gamepad_button_size*1.5,gamepad_button_size*1.5,32);
+	drawing_map(0,graph_boton_3);
+	drawing_color(rgb(0,0,255));
+	draw_fcircle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	drawing_color(rgb(255,255,255));
+	draw_circle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
+	
+	graph_boton_arriba=map_new(2*gamepad_button_size,gamepad_button_size,32);
+	drawing_map(0,graph_boton_arriba);
+	drawing_color(rgb(128,128,128));
+	foo=0;
+	from foo2=0 to gamepad_button_size/2;
+		draw_line(gamepad_button_size-foo,foo2,gamepad_button_size+foo,foo2);
+		foo+=2;
+	end
+	from foo2=gamepad_button_size/2 to gamepad_button_size;
+		draw_line(gamepad_button_size-foo,foo2,gamepad_button_size+foo,foo2);
+		foo-=1;
+	end
+	drawing_color(rgb(255,255,255));
+	draw_line(0,gamepad_button_size/2,gamepad_button_size,0);
+	draw_line(gamepad_button_size,0,2*gamepad_button_size,gamepad_button_size/2);
+	draw_line(2*gamepad_button_size,gamepad_button_size/2,6*gamepad_button_size/4,gamepad_button_size);
+	draw_line(6*gamepad_button_size/4,gamepad_button_size,2*gamepad_button_size/4,gamepad_button_size);
+	draw_line(2*gamepad_button_size/4,gamepad_button_size,0,gamepad_button_size/2);
+	
+	graph_boton_abajo=map_new(2*gamepad_button_size,gamepad_button_size,32);
+	drawing_map(0,graph_boton_abajo);
+	drawing_color(rgb(128,128,128));
+	foo=0;
+	from foo2=0 to gamepad_button_size/2;
+		draw_line(gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo,gamepad_button_size-foo2);
+		foo+=2;
+	end
+	from foo2=gamepad_button_size/2 to gamepad_button_size;
+		draw_line(gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo,gamepad_button_size-foo2);
+		foo-=1;
+	end
+	drawing_color(rgb(255,255,255));
+	draw_line(0,gamepad_button_size/2,gamepad_button_size,gamepad_button_size);
+	draw_line(gamepad_button_size,gamepad_button_size,2*gamepad_button_size,gamepad_button_size/2);
+	draw_line(2*gamepad_button_size,gamepad_button_size/2,6*gamepad_button_size/4,0);
+	draw_line(6*gamepad_button_size/4,0,2*gamepad_button_size/4,0);
+	draw_line(2*gamepad_button_size/4,0,0,gamepad_button_size/2);
+	
+	graph_boton_izquierda=map_new(gamepad_button_size,2*gamepad_button_size,32);
+	drawing_map(0,graph_boton_izquierda);
+	drawing_color(rgb(128,128,128));
+	foo=0;
+	from foo2=0 to gamepad_button_size/2;
+		draw_line(foo2,gamepad_button_size-foo,foo2,gamepad_button_size+foo);
+		foo+=2;
+	end
+	from foo2=gamepad_button_size/2 to gamepad_button_size;
+		draw_line(foo2,gamepad_button_size-foo,foo2,gamepad_button_size+foo);
+		foo-=1;
+	end
+	drawing_color(rgb(255,255,255));
+	draw_line(gamepad_button_size/2,0,0,gamepad_button_size);
+	draw_line(0,gamepad_button_size,gamepad_button_size/2,2*gamepad_button_size);
+	draw_line(gamepad_button_size/2,2*gamepad_button_size,gamepad_button_size,6*gamepad_button_size/4);
+	draw_line(gamepad_button_size,6*gamepad_button_size/4,gamepad_button_size,2*gamepad_button_size/4);
+	draw_line(gamepad_button_size,2*gamepad_button_size/4,gamepad_button_size/2,0);
+	
+	graph_boton_derecha=map_new(gamepad_button_size,2*gamepad_button_size,32);
+	drawing_map(0,graph_boton_derecha);
+	drawing_color(rgb(128,128,128));
+	foo=0;
+	from foo2=0 to gamepad_button_size/2;
+		draw_line(gamepad_button_size-foo2,gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo);
+		foo+=2;
+	end
+	from foo2=gamepad_button_size/2 to gamepad_button_size;
+		draw_line(gamepad_button_size-foo2,gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo);
+		foo-=1;
+	end
+	drawing_color(rgb(255,255,255));
+	draw_line(gamepad_button_size/2,0,gamepad_button_size,gamepad_button_size);
+	draw_line(gamepad_button_size,gamepad_button_size,gamepad_button_size/2,2*gamepad_button_size);
+	draw_line(gamepad_button_size/2,2*gamepad_button_size,0,6*gamepad_button_size/4);
+	draw_line(0,6*gamepad_button_size/4,0,2*gamepad_button_size/4);
+	draw_line(0,2*gamepad_button_size/4,gamepad_button_size/2,0);
+	
+	// You may save these generated buttons!
+	/*i=1;
+	png_save(0,graph_dedo,(i++)+".png");
+	png_save(0,graph_boton_1,(i++)+".png");
+	png_save(0,graph_boton_2,(i++)+".png");
+	png_save(0,graph_boton_3,(i++)+".png");
+	png_save(0,graph_boton_arriba,(i++)+".png");
+	png_save(0,graph_boton_abajo,(i++)+".png");
+	png_save(0,graph_boton_izquierda,(i++)+".png");
+	png_save(0,graph_boton_derecha,(i++)+".png");*/
+End
+#ENDIF
+
+Function prepara_gamepad_virtual();
+Begin
+	//GAMEPAD VIRTUAL:
+	if(ancho_pantalla==0 or alto_pantalla==0)
+		ancho_pantalla=graphic_info(0,0,g_width);
+		alto_pantalla=graphic_info(0,0,g_height);
+	end
+	if(fpg_gamepad==0 and file_exists("fpg/vgamepad.fpg"))
+		#IFDEF NETPLAY
+		fpg_gamepad=net_fpg_load("fpg/vgamepad.fpg");
+		#ELSE
+		fpg_gamepad=fpg_load("fpg/vgamepad.fpg");
+		#ENDIF
+		if(fpg_gamepad>-1)
+			graph_dedo=1;
+			graph_boton_1=2;
+			graph_boton_2=3;
+			graph_boton_3=4;
+			
+			graph_boton_arriba=5;
+			graph_boton_abajo=6;
+			graph_boton_izquierda=7;
+			graph_boton_derecha=8;
+		end
+	end
+	if(graph_dedo<1)
+		#IFNDEF __BENNUGD2__
+		pinta_gamepad();
+		#ENDIF
+	end
+End
+
+Function get_button(player,button);
+Begin
+	if(player>-1)
+		if(p[player].control>-1)
+			return gamepad[p[player].control].buttons[button];
+		end
+	end
+	return 0;
+End
+
+Function get_button_event(player,button,event_type);
+Begin
+	if(player>-1)
+		if(p[player].control>-1)
+			switch(event_type)
+				case on_press:
+					if(gamepad[p[player].control].buttons_on_press[button]==1) return 1; else return 0; end
+				end
+				case on_release:
+					if(gamepad[p[player].control].buttons_on_release[button]==1) return 1; else return 0; end
+				end
+				default:
+					return gamepad[p[player].control].buttons[button];
+				end
+			end
+		end
+	end
+	return 0;
+End
+
+// Useless function used by macros for compatibility with other engines.
+Function devnull(string garbage);
+Begin
+End

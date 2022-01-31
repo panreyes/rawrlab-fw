@@ -1,0 +1,130 @@
+// INI reader library v1.0
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+
+#IFNDEF MOD_INI_READ
+#DEFINE MOD_INI_READ 1
+
+Global
+	string loaded_ini_data;
+End
+
+Function load_ini(string ruta);
+Private
+	string linea;
+Begin
+	loaded_ini_data=file(ruta);
+end
+
+Function string read_ini(string seccion,string clave);
+Private
+	string datos;
+	int pos_seccion;
+	int pos_siguiente_seccion;
+	int pos_igual;
+	int pos_principio_clave;
+	int pos_final_clave;
+Begin	
+	if((pos_seccion=find(loaded_ini_data,"["+seccion+"]"))>-1) 										//buscamos el principio de la sección
+		pos_siguiente_seccion=find(loaded_ini_data,""+chr(10)+"[",pos_seccion);						//averiguamos dónde empieza la siguiente sección
+		if((pos_principio_clave=find(loaded_ini_data,""+clave+"=",pos_seccion))>-1) 				//buscamos la clave siguiente con ese nombre
+			if(pos_siguiente_seccion==-1 or pos_principio_clave<pos_siguiente_seccion) 				//que se encuentre en esa sección
+				pos_final_clave=find(loaded_ini_data,chr(13),pos_principio_clave); 					//msdos, \r
+				pos_principio_clave+=len(clave)+1; 													//detrás del =
+				datos=substr(loaded_ini_data,pos_principio_clave,pos_final_clave-pos_principio_clave);
+			end
+		end
+	end
+	
+	return datos;
+end
+
+Function string read_ini_string(string seccion,string clave, string defecto);
+Private
+	string datos;
+	int pos_seccion;
+	int pos_siguiente_seccion;
+	int pos_igual;
+	int pos_principio_clave;
+	int pos_final_clave;
+Begin	
+	if((pos_seccion=find(loaded_ini_data,"["+seccion+"]"))>-1) 										//buscamos el principio de la sección
+		pos_siguiente_seccion=find(loaded_ini_data,""+chr(10)+"[",pos_seccion);						//averiguamos dónde empieza la siguiente sección
+		if((pos_principio_clave=find(loaded_ini_data,""+clave+"=",pos_seccion))>-1) 				//buscamos la clave siguiente con ese nombre
+			if(pos_siguiente_seccion==-1 or pos_principio_clave<pos_siguiente_seccion) 				//que se encuentre en esa sección
+				pos_final_clave=find(loaded_ini_data,chr(13),pos_principio_clave); 					//msdos, \r
+				pos_principio_clave+=len(clave)+1; 													//detrás del =
+				datos=substr(loaded_ini_data,pos_principio_clave,pos_final_clave-pos_principio_clave);
+			end
+		end
+	end
+	
+	if(datos=="") 
+		return defecto;
+	else
+		return datos;
+	end
+end
+
+Function read_ini_int(string seccion,string clave,int defecto);
+Private
+	string datos;
+	int pos_seccion;
+	int pos_siguiente_seccion;
+	int pos_igual;
+	int pos_principio_clave;
+	int pos_final_clave;
+Begin	
+	if((pos_seccion=find(loaded_ini_data,"["+seccion+"]"))>-1) 										//buscamos el principio de la sección
+		pos_siguiente_seccion=find(loaded_ini_data,""+chr(10)+"[",pos_seccion);						//averiguamos dónde empieza la siguiente sección
+		if((pos_principio_clave=find(loaded_ini_data,""+clave+"=",pos_seccion))>-1) 				//buscamos la clave siguiente con ese nombre
+			if(pos_siguiente_seccion==-1 or pos_principio_clave<pos_siguiente_seccion) 				//que se encuentre en esa sección
+				pos_final_clave=find(loaded_ini_data,chr(13),pos_principio_clave); 					//msdos, \r
+				pos_principio_clave+=len(clave)+1; 													//detrás del =
+				datos=substr(loaded_ini_data,pos_principio_clave,pos_final_clave-pos_principio_clave);
+			end
+		end
+	end
+	
+	if(datos=="") 
+		return defecto;
+	else
+		return atoi(datos);
+	end
+end
+
+Function string ini_get_section_name(int section_number, string filter);
+Private
+	string datos;
+	string extracto;
+	int pos_seccion_principio;
+	int pos_seccion_final;
+	int pos_iteraciones;
+	
+	int pos_siguiente_seccion;
+	int pos_igual;
+	int pos_principio_clave;
+	int pos_final_clave;
+Begin
+	loop
+		if((pos_seccion_principio=find(loaded_ini_data,"[",pos_seccion_final))>-1) 						//buscamos el principio de la sección
+			if((pos_seccion_final=find(loaded_ini_data,"]",pos_seccion_principio))>-1) 					//buscamos el principio de la sección
+				extracto=substr(loaded_ini_data,pos_seccion_principio+1,pos_seccion_final-pos_seccion_principio-1);
+				if(filter=="" or find(extracto,filter)>-1)
+					pos_iteraciones++;
+					if(section_number==pos_iteraciones)
+						datos=extracto;
+						break;
+					end
+				end
+			end
+		else
+			break;
+		end
+	end
+	
+	return datos;
+End
+#ENDIF

@@ -1,0 +1,95 @@
+#DEFINE CUSTOM_FOPEN 1
+
+Global
+	string android_fp[50];
+	int android_fp_seek[50];
+End
+
+Function android_fopen(string ruta, int modo); //modo es un stub, sólo soportamos lectura
+Begin
+	from x=1 to 50;
+		if(android_fp[x]=="")
+			android_fp[x]=file(ruta);
+			android_fp_seek[x]=0;
+			return x;
+		end
+	end
+	return -1;
+End
+
+Function string android_fgets(id_fp);
+Begin
+	if(android_fp[id_fp]!="")
+		//comprobamos si ya hemos llegado al EOF antes
+		if(android_fp_seek[id_fp]==-1)
+			return ""; 
+		end
+		
+		//averiguamos el próximo salto de línea
+		x=find(android_fp[id_fp],chr(13)+chr(10),android_fp_seek[id_fp]); //por ahora sólo soporto EOL de MSDOS, me da pereza hacerlo para Unix también -_-'
+		
+		if(x==-1) //debería ser la última línea entonces:
+			x=android_fp_seek[id_fp];
+			android_fp_seek[id_fp]=-1;
+			return substr(android_fp[id_fp],x);
+		else
+			y=android_fp_seek[id_fp];
+			android_fp_seek[id_fp]=x+2;
+			return substr(android_fp[id_fp],y,android_fp_seek[id_fp]-y-2);
+		end
+	else
+		return "ERROR, FILE NOT LOADED";
+	end
+End
+
+Function android_feof(id_fp);
+Begin
+	if(android_fp_seek[id_fp]==-1)
+		return true;
+	else
+		return false;
+	end
+End
+
+Function android_fclose(id_fp);
+Begin
+	android_fp_seek[id_fp]=-1;
+	android_fp[id_fp]="";
+End
+
+//WRAPPERS:
+Function _fopen(string ruta, int modo);
+Begin
+	if(os_id==os_android)
+		return android_fopen(ruta,modo);
+	else
+		return fopen(ruta,modo);
+	end
+End
+
+Function string _fgets(int id_fp);
+Begin
+	if(os_id==os_android)
+		return android_fgets(id_fp);
+	else
+		return fgets(id_fp);
+	end
+End
+
+Function _feof(int id_fp);
+Begin
+	if(os_id==os_android)
+		return android_feof(id_fp);
+	else
+		return feof(id_fp);
+	end
+End
+
+Function _fclose(int id_fp);
+Begin
+	if(os_id==os_android)
+		return android_fclose(id_fp);
+	else
+		return fclose(id_fp);
+	end
+End

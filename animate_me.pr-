@@ -1,0 +1,263 @@
+// Sprite animation library v1.0
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+//Capas de compatibilidad de PixTudio a BennuGD1/2
+include "../../../libs/rawrlab-fw/pxtcompat.h";
+
+include "../../../libs/rawrlab-fw/ini_read.pr-";
+include "../../../libs/rawrlab-fw/string_replace.pr-";
+
+Global
+	struct animation_sets[20];
+		string name;
+		int frames_delay;
+		int last_anim_slot;
+		struct anim[50];
+			string name;
+			string next_animation_string;
+			int frames_delay;
+			int _loop;
+			int _repeat;
+			int next_animation;
+			int first_frame;
+			int last_frame;
+			int frames[50];
+		end
+	end
+	int animation_sets_number;
+End
+
+Local
+	int animation_set;
+	int animation;
+	int last_animation;
+	int anim_counter; //este se resetea al cambiar la animación o al reiniciar la animación
+	int anim_ticks; //este se resetea al cambiar la animación
+	int anim_id_frame; //este se usa en animaciones fijas
+	int anim_repeated;
+	int anim_skip_frame;
+End
+
+Function animation_anim_id(int animation_set,string name);
+Begin
+	if(animation_sets[animation_set].last_anim_slot<1)
+		return 0;
+	end
+
+	from y=1 to animation_sets[animation_set].last_anim_slot;
+		if(animation_sets[animation_set].anim[y].name==name)
+			return y;
+		end
+	end
+	return 0;
+End
+
+Function animation_load_set(string anim_file);
+Private
+	string temp_name;
+	string animation_section_name;
+	int _animation_counter;
+	int animation_slot;
+Begin
+	animation_sets_number++;
+	load_ini(anim_file);
+	
+	//read global data:
+	animation_sets[animation_sets_number].name=read_ini("Global","name");
+	animation_sets[animation_sets_number].frames_delay=read_ini_int("Global","delay",4);
+	
+	//default global data if empty:
+	//animation_sets[animation_sets_number].name="Unknown";
+	//animation_sets[animation_sets_number].frames_delay=4;
+	
+	//read each animation
+	from x=1 to 50;
+		animation_section_name=ini_get_section_name(x,"anim:");
+		if(animation_section_name!="")
+			//preestablecido:
+			animation_slot=read_ini_int(animation_section_name,"animation_number",0);
+			
+			if(animation_slot!=0)
+				_animation_counter=animation_slot+1;
+			else
+				_animation_counter++;
+				animation_slot=_animation_counter;
+			end
+			
+			//nombre de la animación
+			animation_sets[animation_sets_number].anim[animation_slot].name=string_replace("anim:",animation_section_name,"");
+			
+			animation_sets[animation_sets_number].anim[animation_slot]._loop=read_ini_int(animation_section_name,"loop",1);
+			animation_sets[animation_sets_number].anim[animation_slot]._repeat=read_ini_int(animation_section_name,"repeat",0);
+			
+			//espera... y ésto es correcto?
+			if(animation_sets[animation_sets_number].anim[animation_slot]._repeat!=0)
+				animation_sets[animation_sets_number].anim[animation_slot]._loop=0; //esto tiene sentido?
+			end			
+			
+			animation_sets[animation_sets_number].anim[animation_slot].next_animation_string=read_ini_string(animation_section_name,"next_animation","");
+			animation_sets[animation_sets_number].anim[animation_slot].first_frame=read_ini_int(animation_section_name,"first_frame",0);
+			animation_sets[animation_sets_number].anim[animation_slot].last_frame=read_ini_int(animation_section_name,"last_frame",0);
+			animation_sets[animation_sets_number].anim[animation_slot].frames_delay=read_ini_int(animation_section_name,"delay",0);
+
+			//Pendiente cargar los frames sueltos!
+			animation_sets[animation_sets_number].anim[animation_slot].frames[1]=read_ini_int(animation_section_name,"frames",0);
+		
+			//say(animation_slot);
+			//say(animation_sets[animation_sets_number].anim[animation_slot].name);
+						
+			animation_sets[animation_sets_number].last_anim_slot=animation_slot;
+		end
+	end
+	
+	//resolve each next animation!
+	from x=1 to animation_sets[animation_sets_number].last_anim_slot;
+		if(animation_sets[animation_sets_number].anim[x].next_animation_string!="")
+			animation_sets[animation_sets_number].anim[x].next_animation=animation_anim_id(animation_sets_number,animation_sets[animation_sets_number].anim[x].next_animation_string);
+			//say(animation_sets[animation_sets_number].anim[x].next_animation_string+" -> "+animation_sets[animation_sets_number].anim[x].next_animation);
+		end
+	end
+	
+	return animation_sets_number;
+End
+
+Function animate_me();
+Private
+	int my_delay;
+	int animation_changed;
+	int _animation_next;
+Begin
+	// Recogemos datos, para tenerlos a mano
+	animation_set=father.animation_set;
+	animation=father.animation;
+	last_animation=father.last_animation;
+	anim_counter=father.anim_counter;
+	file=father.file;
+	graph=father.graph;
+	anim_ticks=father.anim_ticks;
+	anim_repeated=father.anim_repeated;
+	anim_id_frame=father.anim_id_frame;
+	anim_skip_frame=father.anim_skip_frame;
+	
+	// Si ha cambiado la animación, se reinicia el contador
+	If(animation!=last_animation)
+		anim_counter=0;
+		anim_ticks=0;
+		anim_repeated=0;
+		anim_id_frame=0;
+		animation_changed=1;
+	End
+
+	anim_ticks++;
+	father.last_animation=animation;
+
+	// Gestión de las animaciones en base al archivo que hemos abierto
+	
+	// averiguamos el delay de esta animación concreta
+	my_delay=animation_sets[animation_set].anim[animation].frames_delay;
+	if(my_delay==0)
+		my_delay=animation_sets[animation_set].frames_delay;
+	end
+	
+	// si acabamos de entrar en una animación
+	
+	//recién hemos cambiado de animación:
+	if(animation_changed)
+		if(animation_sets[animation_set].anim[animation].frames[1]!=0)
+			anim_id_frame=1;
+			graph=animation_sets[animation_set].anim[animation].frames[anim_id_frame];
+		else
+			graph=animation_sets[animation_set].anim[animation].first_frame;
+		end
+	end
+	
+	anim_counter++;
+	if(anim_counter>=my_delay or anim_skip_frame)
+		anim_counter=0;
+		anim_skip_frame=0;
+	
+		//si tenemos una lista de frames fijos:
+		if(animation_sets[animation_set].anim[animation].frames[1]!=0)
+			anim_id_frame++;
+			if(animation_sets[animation_set].anim[animation].frames[anim_id_frame]==0) //alcanzado fin de la animación
+				anim_repeated++;
+				if((animation_sets[animation_set].anim[animation]._repeat>0 and animation_sets[animation_set].anim[animation]._repeat!=anim_repeated) or animation_sets[animation_set].anim[animation]._loop) //si tiene un número de repeticiones determinado y no lo hemos alcanzado, o tiene un bucle infinito, reiniciamos
+					anim_id_frame=1;
+				else //hemos llegado al fin de la animación, ¿cómo lo resolvemos?
+					anim_id_frame--; //nos quedamos en el último frame!
+					if(animation_sets[animation_set].anim[animation].next_animation!=0)
+						_animation_next=animation_sets[animation_set].anim[animation].next_animation;
+					end
+				end
+			end
+			graph=animation_sets[animation_set].anim[animation].frames[anim_id_frame];
+		
+		else //si tenemos un frame de inicio y otro de fin
+			anim_id_frame=0;
+			graph++;
+			if(graph>animation_sets[animation_set].anim[animation].last_frame or (animation_sets[animation_set].anim[animation].last_frame==0 and !map_exists(file,graph))) //fin de la animación!
+				anim_repeated++;
+				if((animation_sets[animation_set].anim[animation]._repeat>0 and animation_sets[animation_set].anim[animation]._repeat!=anim_repeated) 
+				     or animation_sets[animation_set].anim[animation]._loop) //si tiene un número de repeticiones determinado y no lo hemos alcanzado, o tiene un bucle infinito, reiniciamos
+					graph=animation_sets[animation_set].anim[animation].first_frame;
+				else
+					graph--;
+					if(animation_sets[animation_set].anim[animation].next_animation!=0)
+						_animation_next=animation_sets[animation_set].anim[animation].next_animation;
+					end					
+				end
+			end
+		end
+	end	
+		
+	if(_animation_next!=0)
+		animation=_animation_next;
+	end
+
+	// ---------------------------
+	
+	//Devolvemos datos
+	father.graph=graph;
+	father.anim_counter=anim_counter;
+	father.anim_ticks=anim_ticks;
+	father.animation=animation;
+	father.animation_set=animation_set;
+	father.anim_repeated=anim_repeated;
+	father.anim_id_frame=anim_id_frame;
+	
+End
+
+Function animation_change(string animation_set_name,string animation_anim_name);
+Private
+	int animation_set_number;
+	int animation_anim_number;
+Begin
+	from x=1 to animation_sets_number;
+		if(animation_sets[x].name==animation_set_name)
+			animation_set_number=x;
+			break;
+		end
+	end
+	
+	if(animation_set_number==0) 
+		return 0; 
+	end	
+	
+	from x=1 to animation_sets[animation_set_number].last_anim_slot;
+		if(animation_sets[animation_set_number].anim[x].name==animation_anim_name)
+			animation_anim_number=x;
+			break;
+		end
+	end
+	
+	if(animation_anim_number==0) 
+		return 0; 
+	end
+	
+	father.animation_set=animation_set_number;
+	father.animation=animation_anim_number;
+	
+	return animation_anim_number;
+End

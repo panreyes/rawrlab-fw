@@ -1,0 +1,53 @@
+Global
+	int do_debug_id;
+	int do_debug_process_number;
+	int do_debug_text_number;
+	int do_debug_letters_number;
+End
+
+Process do_debug();
+Private
+	int last_fps;
+Begin
+	last_fps=fps;
+	if(exists(do_debug_id))
+		signal(do_debug_id,s_kill);
+	end
+	do_debug_id=id;
+	unkillable=1;
+	loop
+		if(key(_space))
+			set_fps(0,0);
+			while(key(_space)) frame; end
+			set_fps(60,0);
+		end
+		do_debug_count_processes();
+		do_debug_count_texts();
+		do_debug_count_letters();
+		frame;
+	end
+End
+
+Function do_debug_count_processes();
+Begin
+	while(get_id(0)!=0)
+		x++;
+	end
+	do_debug_process_number=x;
+End
+
+Function do_debug_count_texts();
+Begin
+	while((y=get_id(0))!=0)
+		if(y.soy_un_texto) x++; end
+	end
+	do_debug_text_number=x;
+End
+
+Function do_debug_count_letters();
+Begin
+	while(get_id(type letra))
+		x++;
+	end
+	do_debug_letters_number=x;
+End

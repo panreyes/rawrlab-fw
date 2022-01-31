@@ -1,0 +1,1136 @@
+// Dynamic text animation library v1.0
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+/*
+
+	EFECTOS DE TEXTOS:
+
+	Efecto 1: giro de ángulo
+	Efecto 2: aparece desde arriba y se coloca en un ángulo levemente girado
+	Efecto 3: se hace grande
+	Efecto 4: nervioso!
+	Efecto 5: se coloca en un ángulo levemente girado
+
+	Efecto 10: rand(10,14); (para cada letra)
+	Efecto 11: aparece por la izquierda
+	Efecto 12: aparece por la derecha
+	Efecto 13: aparece por arriba
+	Efecto 14: aparece por abajo
+
+	Process importante: dibujame_el_texto
+
+*/
+
+//Capas de compatibilidad de PixTudio a BennuGD1/2
+include "../../../libs/rawrlab-fw/pxtcompat.h";
+
+//Declaraciones para BennuGD2
+#IFDEF __BENNUGD2__
+	DECLARE Process letra(file,graph,angle,local_type size_x,local_type size_y,int offset_x,offset_y,grandpa,efecto); end
+#ENDIF
+
+#IFNDEF MOD_TEXT_COMPAT
+	#DEFINE _write_int write_int
+	#DEFINE _write write
+	#DEFINE _delete_text delete_text
+#ENDIF
+
+Const
+	#IFNDEF MOD_TEXT_COMPAT
+		all_text=-1;
+	#ENDIF
+	_all_text=-1;
+End
+
+Global
+	int matatextos=0;
+	int fading_text=0;
+	struct ops_fuentes[20];
+		int margen;
+		int espacio;
+		int modr=255;
+		int modg=255;
+		int modb=255;
+		int fixed_width;
+		int max_height;
+		struct sombra;
+			int x_offset;
+			int y_offset;
+			int r=0;
+			int g=0;
+			int b=0;
+			int a=255;
+			int steps=10;
+		end
+	end
+	int num_traducciones=0;
+	string traducciones[300][1];
+	int text_effects_mode=0;
+	int mod_text_z=-4096;
+	int forzar_solo_caps=0;
+	int fpg_gamepad_fnt;
+	
+	#IFDEF __NINTENDO_SWITCH__
+	char graph_btn_accept=3;
+	char graph_btn_cancel=2;
+	#ELSE
+	char graph_btn_accept=2;
+	char graph_btn_cancel=3;
+	#ENDIF
+End
+
+Local
+	int rand_y;
+	int rand_angle;
+	int soy_un_texto;
+	int offset_x;
+	int offset_y;
+End
+
+Function string my_ucase(string texto);
+Private
+	string texto2;
+Begin
+	from i=0 to len(texto);
+		j=asc(texto[i]);
+		if(j>96 and j<123) //letras estándar
+			j-=32;
+		end
+		if(j==160) j=181; end //á
+		if(j==130) j=144; end //é
+		if(j==161) j=214; end //í
+		if(j==162) j=224; end //ó
+		if(j==163) j=233; end //ú
+		texto2+=chr(j);
+	end
+	return texto2;
+End
+
+Function string traduceme(string texto);
+Begin
+	//si no tenemos nada que traducir, volvemos ya
+	if(find(texto,"%")==-1 and find(texto,"+")==-1)
+		return texto;
+	end
+	
+	//para facilitar la faena, el campo que buscamos sí que está en uppercase
+	texto=my_ucase(texto);
+	
+	if(i=find(texto,"%")>-1)
+		if(find(texto,"%",i)>-1)
+			from i=0 to num_traducciones;
+				texto=string_replace("%"+traducciones[i][0]+"%",texto,traducciones[i][1]);
+			end	
+		end
+		if(find(texto,"%")>-1)
+			say("No se pudo traducir "+texto);
+		end
+	end
+	
+	if(find(texto,"+")>-1)
+		texto=string_replace("+BUTTON_ACCEPT+",texto,chr(graph_btn_accept));
+		texto=string_replace("+BUTTON_CANCEL+",texto,chr(graph_btn_cancel));
+
+		#IFDEF __NINTENDO_SWITCH__
+			texto=string_replace("+DPAD+",texto,chr(11)+" "+chr(5));
+		#ELSE
+			texto=string_replace("+DPAD+",texto,chr(5));
+		#ENDIF
+		texto=string_replace("+BUTTON_1+",texto,chr(1));
+		texto=string_replace("+BUTTON_2+",texto,chr(2));
+		texto=string_replace("+BUTTON_3+",texto,chr(3));
+		texto=string_replace("+BUTTON_4+",texto,chr(4));
+		texto=string_replace("+BUTTON_START+",texto,chr(6));
+		texto=string_replace("+BUTTON_L1+",texto,chr(7));
+		texto=string_replace("+BUTTON_R1+",texto,chr(8));
+		texto=string_replace("+BUTTON_L2+",texto,chr(9));
+		texto=string_replace("+BUTTON_R2+",texto,chr(10));
+		texto=string_replace("+LEFT_JOY+",texto,chr(11));
+		texto=string_replace("+RIGHT_JOY+",texto,chr(12));
+		texto=string_replace("+BUTTON_L3+",texto,chr(13));
+		texto=string_replace("+BUTTON_R3+",texto,chr(14));
+
+		texto=string_replace("+BUTTON_U+",texto,chr(1));
+		texto=string_replace("+BUTTON_O+",texto,chr(2));
+		texto=string_replace("+BUTTON_A+",texto,chr(3));
+		texto=string_replace("+BUTTON_Y+",texto,chr(4));
+		texto=string_replace("+BUTTON_OUYA+",texto,chr(6));
+		
+		texto=string_replace("+BUTTON_ANY+",texto,chr(15));
+		#IFDEF EXPLOSIVEDINOS
+			texto=string_replace("+PLAYER1+",texto,chr(15+1)); //el color se elige en otro momento
+			texto=string_replace("+PLAYER2+",texto,chr(15+2));
+			texto=string_replace("+PLAYER3+",texto,chr(15+3));
+			texto=string_replace("+PLAYER4+",texto,chr(15+4));
+
+			texto=string_replace("+WINNER+",texto,chr(48+mini_winner));
+		#ENDIF
+	end
+	
+	return texto;
+End
+
+Process write_cool(int fpg_fuente,local_type x,local_type y,int centrado,string texto,local_type size,int efecto);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,0,0,0,centrado,efecto);
+	
+	//2. permanecemos
+	while(action!=-1)
+		frame;
+	end
+End
+
+Process write_cool_color(fpg_fuente,local_type x,local_type y,int centrado,string texto,local_type size,int efecto, modr, modg, modb);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,0,0,0,centrado,efecto);
+	
+	//2. permanecemos
+	while(action!=-1)
+		frame; 
+	end
+End
+
+Process write_ex(fpg_fuente,local_type x,local_type y,int centrado,string texto,local_type size,int margen,rand_y_max,rand_angle_max,fixed_width,efecto);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,margen,rand_y_max,rand_angle_max,fixed_width,centrado,efecto);
+	
+	//2. permanecemos
+	while(action!=-1)
+		frame; 
+	end
+End
+
+Process write_size(fpg_fuente,local_type x,local_type y,int centrado,string texto,local_type size);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+	
+	//2. permanecemos
+	while(action!=-1)
+		frame; 
+	end
+End
+
+#IFDEF MOD_TEXT_COMPAT
+Process _write(fpg_fuente,local_type x,local_type y,int centrado,string texto);
+#ELSE
+Process write(fpg_fuente,local_type x,local_type y,int centrado,string texto);
+#ENDIF
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+	
+	//2. permanecemos
+	while(action!=-1)
+		frame; 
+	end
+End
+
+#IFDEF MOD_TEXT_COMPAT
+Process _write_int(fpg_fuente,local_type x,local_type y,int centrado,*numero);
+#ELSE
+Process write_int(fpg_fuente,local_type x,local_type y,int centrado,*numero);
+#ENDIF
+Private
+	int mi_ancho;
+	int mi_alto;
+	int anterior_numero;
+	int mi_txt;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+	
+	//2. permanecemos
+	while(action!=-1)
+		if(anterior_numero!=*numero) //redibujamos
+			text_soft_kill(mi_txt);
+			mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+		end
+		anterior_numero=*numero;
+		frame; 
+	end
+End
+
+Process write_int_size(fpg_fuente,local_type x,local_type y,int centrado,*numero,local_type size);
+Private
+	int mi_ancho;
+	int mi_alto;
+	int anterior_numero;
+	int mi_txt;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+	
+	//2. permanecemos
+	while(action!=-1)
+		if(anterior_numero!=*numero) //redibujamos
+			text_soft_kill(mi_txt);
+			mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
+		end
+		anterior_numero=*numero;
+		frame; 
+	end
+End
+
+#IFDEF MOD_TEXT_COMPAT
+Function _delete_text(cual);
+#ELSE
+Function delete_text(cual);
+#ENDIF
+Private
+	int mi_id_texto;
+Begin
+	if(cual==_all_text) //_all_text
+		while(mi_id_texto=get_id(0))
+			if(exists(mi_id_texto))
+				if(mi_id_texto.soy_un_texto==1)
+					//if(mi_id_texto.graph>0)
+					//	map_unload(0,mi_id_texto.graph);
+					//end
+					mi_id_texto.alpha=0;
+					mi_id_texto.action=-1;
+				end
+			end
+		end
+		while(mi_id_texto=get_id(type letra)) //en ocasiones se quedan letras huérfanas!
+			if(exists(mi_id_texto))
+				mi_id_texto.alpha=0;
+				mi_id_texto.action=-1;
+			end
+		end
+	else
+		if(exists(cual))
+			if(cual.soy_un_texto==1)
+				cual.alpha=0;
+				cual.action=-1;
+			end
+		else
+			#IFDEF MOD_TEXT_COMPAT
+				#IFDEF __BENNUGD2__
+					write_delete(cual);
+				#ELSE
+					delete_text(cual);
+				#ENDIF
+			#ENDIF
+		end
+	end
+End
+
+Process fade_off_text(cual,steps);
+Private
+	int mi_id_texto;
+Begin
+	while(alpha>0)
+		alpha-=steps;
+		if(cual==_all_text) //_all_text
+			while(mi_id_texto=get_id(0))
+				if(exists(mi_id_texto))
+					if(mi_id_texto.soy_un_texto==1)
+						fade_off_text(mi_id_texto,steps);
+					end
+				end
+			end
+			return;
+		else
+			if(exists(cual))
+				if(cual.soy_un_texto==1)
+					cual.alpha=alpha;
+				end
+			else
+				#IFDEF MOD_TEXT_COMPAT
+				break;
+				#ENDIF
+			end
+		end
+		frame;
+	end
+	_delete_text(cual);
+End
+
+Process fade_in_text(cual,steps);
+Private
+	int mi_id_texto;
+Begin
+	alpha=0;
+	while(alpha<255)
+		alpha+=steps;
+		if(alpha>255) alpha=255; end
+		if(cual==_all_text)
+			if(fading_text) return; end
+			fading_text=1;
+			while(mi_id_texto=get_id(0))
+				if(exists(mi_id_texto))
+					if(mi_id_texto.soy_un_texto==1)
+						mi_id_texto.alpha=alpha;
+					end
+				end
+			end
+			fading_text=0;
+		else
+			if(exists(cual))
+				if(cual.soy_un_texto==1)
+					cual.alpha=alpha;
+				end
+			end
+		end
+		frame;
+	end
+End
+
+Function centrame(file,graph,centrado);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	mi_ancho=graphic_info(file,graph,G_WIDTH);
+	mi_alto=graphic_info(file,graph,G_HEIGHT);
+
+	switch(centrado)
+		case 0: center_set(file,graph,0,0); end
+		case 1: center_set(file,graph,mi_ancho/2,0); end
+		case 2: center_set(file,graph,mi_ancho,0); end
+		case 3: center_set(file,graph,0,mi_alto/2); end
+		case 4: center_set(file,graph,mi_ancho/2,mi_alto/2); end
+		case 5: center_set(file,graph,mi_ancho,mi_alto/2); end
+		case 6: center_set(file,graph,0,mi_alto); end
+		case 7: center_set(file,graph,mi_ancho/2,mi_alto); end
+		case 8: center_set(file,graph,mi_ancho,mi_alto); end
+	end
+End
+
+Process dibujame_el_texto(fpg_fuente,string texto,int margen,rand_y_max,rand_angle_max,fixed_width,centrado,efecto);
+Private
+	int mi_alto_max;
+	int mi_ancho_total;
+	int caracter;
+	int caracter_anterior;
+	int mi_bpp;
+	int x_centro;
+	int y_centro;
+Begin
+	//la primera vez que utilizamos una fuente, averiguamos el tamaño máximo de la fuente
+	if(ops_fuentes[fpg_fuente].max_height==0)
+		from i=1 to 999;
+			if(map_exists(fpg_fuente,i))
+				if(graphic_info(fpg_fuente,i,G_HEIGHT)>ops_fuentes[fpg_fuente].max_height)
+					ops_fuentes[fpg_fuente].max_height=graphic_info(fpg_fuente,i,G_HEIGHT);
+				end
+			end
+		end
+	end
+	mi_alto_max=ops_fuentes[fpg_fuente].max_height;
+	unkillable=1;
+	frame; //esto hace que no se muestre antes de tiempo! 
+	alpha=father.alpha;
+	z=father.z;
+	if(father.size_x!=100 or father.size_y!=100)
+		size_x=father.size_x;
+		size_y=father.size_y;
+	else
+		size_x=father.size;
+		size_y=father.size;
+	end
+	
+	soy_un_texto=1;
+	modr=father.modr;
+	modg=father.modg;
+	modb=father.modb;
+
+	//APAÑO TEMPORAL:
+	if(forzar_solo_caps)
+		texto=my_ucase(texto);
+	end
+	
+	//0. reemplazamos algunos textos:
+	texto=traduceme(texto);
+	
+	if(fpg_fuente<0) return 0; end
+	
+	//Si no tiene ni la A, ni la a, ni un 1, fallo.
+	if(!map_exists(fpg_fuente,97) and !map_exists(fpg_fuente,65) and !map_exists(fpg_fuente,48))
+		return 0;
+	end
+	
+	file=fpg_fuente;
+	if(!map_exists(fpg_fuente,97)) //si no hay minúsculas, uppercase-amos
+		texto=my_ucase(texto);
+	end
+	
+	//1. contar el espacio horizontal y vertical
+	if(len(texto)>1)
+		from i=0 to len(texto)-1;
+			file=fpg_fuente;
+			caracter_anterior=caracter;
+			caracter=asc(texto[i]);
+			if(caracter<16) file=fpg_gamepad_fnt; end
+			#IFDEF EXPLOSIVEDINOS
+			if(caracter>15 and caracter<20)
+				file=fpg_dino[caracter-15]; //esto sólo es para las medidas, no para mostrar
+				caracter=901;
+			end
+			#ENDIF
+			if(caracter==32)
+				x+=ops_fuentes[fpg_fuente].espacio+margen;
+			else
+				if(i==0)
+					x=(graphic_info(file,caracter,G_WIDTH)/2);
+				elseif(i==len(texto)-1)
+					x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH));
+				else
+					x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH)/2);
+				end
+				#IFNDEF EXPLOSIVEDINOS
+					if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max)
+						mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
+					end
+				#ELSE
+					if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max and caracter!=901)
+						mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
+					end
+				#ENDIF
+			end	
+		end
+	else
+		x=graphic_info(file,asc(texto[0]),G_WIDTH);
+		mi_alto_max=graphic_info(file,asc(texto[0]),G_HEIGHT);
+	end
+	
+	if(fixed_width==0)
+		if(ops_fuentes[fpg_fuente].fixed_width>0)
+			fixed_width=ops_fuentes[fpg_fuente].fixed_width;
+		end
+	end
+	if(fixed_width>0)
+		if(size_x!=100)
+			fixed_width=fixed_width*size_x/100;
+		else
+			fixed_width=fixed_width*size/100;
+		end
+	end
+	
+	if(fixed_width>0)
+		mi_ancho_total=fixed_width*(len(texto)+1);
+	else
+		mi_ancho_total=x;
+	end
+	
+	x=0; y=0;
+
+	//2.centramos
+	if(centrado==0 or centrado==3 or centrado==6)
+		x_centro=0;
+	elseif(centrado==2 or centrado==5 or centrado==8)
+		x_centro=-mi_ancho_total;
+	else
+		x_centro=-mi_ancho_total/2;
+	end
+	if(centrado<3)
+		y_centro=0;
+	elseif(centrado>5)
+		y_centro=-mi_alto_max;
+	else
+		y_centro=-mi_alto_max/2;
+	end
+	
+	x_centro=x_centro*size_x/100;
+	y_centro=y_centro*size_y/100;
+	
+	//3. ponemos todas las letracas
+	from i=0 to len(texto)-1;
+		caracter_anterior=caracter;
+		caracter=asc(texto[i]);
+		file=fpg_fuente;
+		if(caracter<16)
+			file=fpg_gamepad_fnt;
+		end
+		#IFDEF EXPLOSIVEDINOS
+		if(caracter>15 and caracter<20)
+			file=fpg_dino[caracter-15];
+			caracter=901;
+		end
+		#ENDIF
+		if(graphic_info(file,caracter,G_HEIGHT)>0 or caracter==32)
+			if(rand_y_max>0) rand_y=rand(-rand_y_max*2,0); end
+			if(rand_angle_max>0) rand_angle=rand(-rand_angle_max,rand_angle_max); end
+			if(fixed_width)
+				x=fixed_width+(fixed_width*(i));
+				//y=mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y;
+				y=mi_alto_max/2+rand_y;
+				letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+			else
+				if(caracter==32)
+					x+=(ops_fuentes[fpg_fuente].espacio+margen)*size_x/100;
+					#IFDEF EXPLOSIVEDINOS
+					elseif(caracter==901) //XD
+						x+=(30+margen)*size_x/100;
+						y=(mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y)*size_y/100;
+						letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+					#ENDIF
+				else
+					if(i==0)
+						x=(graphic_info(file,caracter,G_WIDTH)/2)*size_x/100;
+					else
+						x+=((graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH)/2))*size_x/100;
+					end
+					//y=(mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y)*size_y/100;
+					y=(mi_alto_max/2+rand_y)*size_y/100;
+					letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+				end
+			end
+		else
+			say("No se ha encontrado la letra "+chr(texto[i])+" (nº "+atoi(texto[i])+") en el FPG "+file);
+		end
+	end
+	
+	while(exists(father))
+		priority=father.priority;
+		alpha=father.alpha;
+		z=father.z;
+		ctype=father.ctype;
+		cnumber=father.cnumber;
+		if(action==-1 or father.action==-1) break; end
+		frame; 
+	end
+End
+
+Process letra(file,graph,angle,local_type size_x,size_y,int offset_x,offset_y,grandpa,efecto);
+Private
+	int size_x_out;
+	int size_y_out;
+	int angle_add;
+	int id_letra_sombra;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	
+	//efectos chachis! :D
+	if(efecto==10)
+		efecto=rand(11,14);
+	end
+
+	if(text_effects_mode==-1)
+		efecto=0;
+	end
+	if(text_effects_mode==1 and efecto==0)
+		efecto=rand(1,4)+(10*rand(0,1));
+	end
+	
+	if(file==fpg_gamepad_fnt)
+		efecto=0;
+	end
+	
+	modr=father.modr;
+	modg=father.modg;
+	modb=father.modb;
+	
+	switch(efecto)
+		case 1: //aparece girando
+			if(rand(0,1)) angle=90000; else angle=-90000; end
+		end
+		case 2: //aparece por arriba y deja la letra un poco girada
+			y=rand(-500,-100);
+			angle_add=rand(-500,500);
+		end
+		case 3: //aparece desde size 0 hasta objetivo
+			size_x_out=size_x;
+			size_y_out=size_y;
+			size_x=0;
+			size_y=0;
+		end
+		case 4: //vibración
+		end
+		case 5: //deja la letra un poco girada
+			angle_add=rand(-1000,1000);
+		end
+		case 11: //aparece por la izquierda
+			x=rand(-500,-200);
+		end
+		case 12: //aparece por la derecha
+			x=1280+rand(200,500);
+		end
+		case 13: //aparece por arriba
+			y=rand(-500,-200);
+		end
+		case 14: //aparece por abajo
+			y=720+rand(200,500);
+		end
+	end
+	
+	i=father.i;
+	while(exists(father))
+		priority=father.priority+1; //Con retraso a propósito, sí
+		//esto le da un efecto guay: parte 2
+		if(grandpa!=0)
+			if(!exists(grandpa))
+				break;
+			else
+				switch(efecto)
+					case 1:
+						if(angle<0)	angle+=5000; if(angle>0) angle=0; end end
+						if(angle>0)	angle-=5000; if(angle<0) angle=0; end end
+						x=grandpa.x+offset_x;
+						y=grandpa.y+offset_y;
+					end
+					case 2:
+						x=grandpa.x+offset_x;
+						if(y<grandpa.y+offset_y)
+							angle+=angle_add;
+							y+=(((grandpa.y+offset_y)-y)/5)+2;
+							if(y>(grandpa.y+offset_y))
+								y=grandpa.y+offset_y;
+							end
+						end
+					end
+					case 3:
+						if(size_x<size_x_out)
+							size_x+=((size_x_out-size_x)/5)+2;
+							size_y+=((size_y_out-size_y)/5)+2;
+							if(size_x>size_x_out)
+								size_x=size_x_out;
+								size_y=size_y_out;
+							end
+						end
+						x=grandpa.x+offset_x;
+						y=grandpa.y+offset_y;
+					end
+					case 4: //vibración
+						x=grandpa.x+offset_x+(rand(-5,5));
+						y=grandpa.y+offset_y+(rand(-5,5));
+					end
+					case 5: //se colocan en un ángulo random
+						x=grandpa.x+offset_x;
+						y=grandpa.y+offset_y;
+						if(i++<15)
+							angle+=angle_add;
+						end
+					end
+					case 11: //aparece por la izquierda
+						y=grandpa.y+offset_y;
+						if(x<grandpa.x+offset_x)
+							x+=(((grandpa.x+offset_x)-x)/5)+2;
+							if(x>(grandpa.x+offset_x))
+								x=grandpa.x+offset_x;
+							end
+						end
+					end
+					case 12: //aparece por la derecha
+						y=grandpa.y+offset_y;
+						if(x>grandpa.x+offset_x)
+							x-=((x-(grandpa.x+offset_x))/5)+2;
+							if(x<(grandpa.x+offset_x))
+								x=grandpa.x+offset_x;
+							end
+						end
+					end
+					case 13: //aparece por arriba
+						x=grandpa.x+offset_x;
+						if(y<grandpa.y+offset_y)
+							y+=(((grandpa.y+offset_y)-y)/5)+2;
+							if(y>(grandpa.y+offset_y))
+								y=grandpa.y+offset_y;
+							end
+						end
+					end
+					case 14: //aparece por abajo
+						x=grandpa.x+offset_x;
+						if(y>grandpa.y+offset_y)
+							y-=((y-(grandpa.y+offset_y))/5)+2;
+							if(y<(grandpa.y+offset_y))
+								y=grandpa.y+offset_y;
+							end
+						end
+					end
+					
+					default:
+						x=grandpa.x+offset_x;
+						y=grandpa.y+offset_y;
+					end
+				end
+				if(grandpa.action==-1) break; end
+			end
+		end
+		alpha=father.alpha;
+		z=father.z+i;
+		ctype=father.ctype;
+		cnumber=father.cnumber;
+		if(action==-1 or father.action==-1) break; end
+		
+		if(ops_fuentes[file].sombra.x_offset!=0 or ops_fuentes[file].sombra.y_offset!=0)
+			if(!id_letra_sombra)
+				id_letra_sombra=letra_sombra();
+			end
+		end
+		
+		frame;
+	end
+End
+
+Process letra_sombra();
+Private
+	int current_step;
+Begin
+	while(exists(father))
+		priority=father.priority-1;
+		file=father.file;
+		graph=father.graph;
+		ctype=father.ctype;
+		cnumber=father.cnumber;
+		z=father.z+2; //+2 por si colisionamos con una letra
+		size_x=father.size_x;
+		size_y=father.size_y;
+		alpha=father.alpha;
+		angle=father.angle;
+		
+		alpha=ops_fuentes[file].sombra.a * father.alpha / 255;
+		modr=ops_fuentes[file].sombra.r;
+		modg=ops_fuentes[file].sombra.g;
+		modb=ops_fuentes[file].sombra.b;
+		
+		if(current_step<ops_fuentes[file].sombra.steps)
+			current_step++;
+		end
+		offset_x=ops_fuentes[file].sombra.x_offset*current_step/ops_fuentes[file].sombra.steps;
+		offset_y=ops_fuentes[file].sombra.y_offset*current_step/ops_fuentes[file].sombra.steps;
+		
+		x=father.x+(offset_x*size_x/100);
+		y=father.y+(offset_y*size_y/100);
+		
+		//x=father.x+(ops_fuentes[file].sombra.x_offset*size_x/100);
+		//y=father.y+(ops_fuentes[file].sombra.y_offset*size_y/100);
+		frame;
+	end
+End
+
+Function set_text_color(int crap);
+Begin
+	//stub
+End
+
+Function text_width(int crap1,string crap2);
+Begin
+End
+
+Function _fnt_load(string fuente_a_cargar);
+Private
+	int my_fnt;
+	int my_fpg;
+Begin
+	my_fnt=fnt_load(fuente_a_cargar);
+	my_fpg=fpg_new();
+	from x=1 to 999;
+		y=glyph_get(my_fnt,x);
+		if(y>0)
+			fpg_add(my_fpg,x,0,y);
+			map_unload(0,y);
+		end
+	end
+	fnt_unload(my_fnt);
+	return my_fpg;
+End
+
+#IFDEF __PIXTUDIO__
+Function _ttf_load(string fuente_a_cargar,local_type size);
+Private
+	string fuente_en_fpg;
+	int my_ttf;
+	int my_fpg;
+Begin
+	my_ttf=ttf_load(fuente_a_cargar);
+	my_fpg=fpg_new();
+	ttf_set_size(my_ttf,size);
+	from x=1 to 999;
+		y=glyph_get(my_ttf,x);
+		if(y>0)
+			fpg_add(my_fpg,x,0,y);
+			map_unload(0,y);
+		end
+	end
+	fnt_unload(my_ttf);
+	return my_fpg;
+End
+#ENDIF
+
+#IFNDEF __BENNUGD2__
+Function dibujame_el_texto_en_un_mapa(fpg_fuente,string texto,int margen,rand_y_max,rand_angle_max,fixed_width);
+Private
+	int mi_alto_max;
+	int mi_ancho_total;
+	int caracter;
+	int caracter_anterior;
+	int mi_bpp;
+	int foo;
+Begin
+	//0. reemplazamos algunos textos:
+	texto=traduceme(texto);
+
+	if(fpg_fuente<0) return 0; end
+	if(!map_exists(fpg_fuente,97) and !map_exists(fpg_fuente,65) and !map_exists(fpg_fuente,48))
+		return 0;
+	end
+	file=fpg_fuente;
+	if(!map_exists(fpg_fuente,97)) //si no hay minúsculas, uppercase-amos
+		texto=my_ucase(texto);
+	end
+	
+	//1. contar el espacio horizontal y vertical
+	if(len(texto)>1)
+		from foo=0 to len(texto)-1;
+			caracter_anterior=caracter;
+			caracter=asc(texto[foo]);
+			file=fpg_fuente;
+			if(caracter<16)
+				file=fpg_gamepad_fnt;
+			end
+			if(caracter==32)
+				x+=ops_fuentes[fpg_fuente].espacio+margen;
+			else
+				if(foo==0)
+					x=(graphic_info(file,caracter,G_WIDTH)/2);
+				elseif(foo==len(texto)-1)
+					x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH));
+				else
+					x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH)/2);
+				end
+				if(graphic_info(file,asc(texto[foo]),G_HEIGHT)>mi_alto_max)
+					mi_alto_max=graphic_info(file,asc(texto[foo]),G_HEIGHT)+(rand_y_max*2);
+				end
+			end	
+		end
+	else
+		x=graphic_info(file,asc(texto[0]),G_WIDTH);
+		mi_alto_max=graphic_info(file,asc(texto[0]),G_HEIGHT);
+	end
+	if(fixed_width>0)
+		mi_ancho_total=fixed_width*(len(texto)+1);
+	else
+		mi_ancho_total=x;
+	end
+	x=0; y=0;
+
+	//2.creamos el gráfico
+	mi_bpp=graphic_info(file,48,G_DEPTH);
+	graph=map_new(mi_ancho_total,mi_alto_max,mi_bpp);
+
+	//DEBUG:
+	/*drawing_map(0,graph);
+	drawing_color(rgb(100,0,0));
+	draw_box(0,0,mi_ancho_total,mi_alto_max);*/
+	
+	//3. ponemos todas las letracas
+	from foo=0 to len(texto)-1;
+		caracter_anterior=caracter;
+		caracter=asc(texto[foo]);
+		file=fpg_fuente;
+		if(caracter<16)
+			file=fpg_gamepad_fnt;
+		end
+		if(graphic_info(file,caracter,G_HEIGHT)>0 or caracter==32)
+			if(rand_y_max>0) rand_y=rand(-rand_y_max*2,0); end
+			if(rand_angle_max>0) rand_angle=rand(-rand_angle_max,rand_angle_max); end
+			if(fixed_width)
+				x=fixed_width+(fixed_width*(foo));
+				y=mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y;
+				map_xputnp(0,graph,file,caracter,x,y,rand_angle,100,100,0);
+			else
+				if(caracter==32)
+					x+=ops_fuentes[fpg_fuente].espacio+margen;
+				else
+					if(foo==0)
+						x=(graphic_info(file,caracter,G_WIDTH)/2);
+					else
+						x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH)/2);
+					end
+					y=mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y;
+					map_xputnp(0,graph,file,caracter,x,y,rand_angle,100,100,0);
+				end
+			end
+		else
+			say("No se ha encontrado la letra "+chr(texto[foo])+" en el FPG "+file);
+		end
+	end
+	
+	//4. devolvemos el id del gráfico
+	return graph;
+End
+
+// Algunos juegos tienen prohibidas estas funciones:
+#IFNDEF EXPLOSIVEDINOS
+#IFNDEF RIPOLLES
+
+Function write_in_map(fpg_fuente,string texto,int centrado);
+Begin
+	//1. pintamos texto en un mapa de bits
+	graph=dibujame_el_texto_en_un_mapa(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0);
+	return graph;
+End
+
+Function write_size_to_map(fpg_fuente,local_type x,local_type y,int centrado,string texto,local_type size,int to_file,to_graph);
+Begin
+	//1. pintamos texto en un mapa de bits
+	graph=dibujame_el_texto_en_un_mapa(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,0,0,0);
+	
+	//2. centramos
+	centrame(fpg_fuente,graph,centrado);
+	
+	//3. ponemos el texto en el gráfico
+	map_xputnp(to_file,to_graph,0,graph,x,y,0,size,size,0);
+	
+	map_unload(0,graph);
+End
+
+#ENDIF
+#ENDIF
+
+#ENDIF
+
+Function carga_traducciones();
+Private
+	string linea;
+Begin
+	from i=0 to 300;
+		traducciones[i][0]="";
+		traducciones[i][1]="";
+	end
+	num_traducciones=0;
+	#IFDEF CUSTOM_FOPEN
+		if(fexists("langs/"+ops.lang+".txt"))
+			i=_fopen("langs/"+ops.lang+".txt",O_READ);
+		else
+			i=_fopen("langs/en.txt",O_READ);
+		end
+	#ELSE
+		if(fexists("langs/"+ops.lang+".txt"))
+			i=fopen("langs/"+ops.lang+".txt",O_READ);
+		else
+			i=fopen("langs/en.txt",O_READ);
+		end
+	#ENDIF
+	if(i!=0)
+		loop
+			#IFDEF CUSTOM_FOPEN
+			linea=_fgets(i);
+			#ELSE
+			linea=fgets(i);
+			#ENDIF
+			if(linea=="") break; end
+			j=find(linea,"=");
+			if(j>-1)
+				num_traducciones++;
+				
+				//para facilitar la faena, el campo que buscamos sí que está en uppercase
+				traducciones[num_traducciones][0]=my_ucase(substr(linea,0,j));
+				
+				//traducciones[num_traducciones][0]=substr(linea,0,j);
+				//if(ops.lang!="es")
+					//traducciones[num_traducciones][1]=my_ucase(substr(linea,j+1));
+					traducciones[num_traducciones][1]=substr(linea,j+1);
+				//else
+				//	traducciones[num_traducciones][1]=traducciones[num_traducciones][0];
+				//end
+			end
+		end
+		#IFDEF CUSTOM_FOPEN
+		_fclose(i);
+		#ELSE
+		fclose(i);
+		#ENDIF
+	else
+		say("Couldn't open langs/"+ops.lang+".txt");
+	end
+End
+
+Function text_soft_kill(process_id);
+Begin
+	if(exists(process_id))
+		process_id.action=-1;
+	end
+End
+
+Process write_fixed(fpg_fuente,local_type x,y,int centrado,string texto,int fixed_width);
+Private
+	int mi_ancho;
+	int mi_alto;
+Begin
+	unkillable=1;
+	resolution=global_resolution;
+	z=mod_text_z;
+	soy_un_texto=1;
+	
+	//1. pintamos texto en un mapa de bits
+	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,fixed_width,centrado,0);
+	
+	//2. centramos
+	//centrame(file,graph,centrado); //esto es sólo cuando se dibuja!
+	
+	//3. permanecemos
+	while(action!=-1)
+		frame; 
+	end
+End
+
+#IFDEF MOD_TEXT_COMPAT
+Function set_text_z(valor); //Me pregunto si esto no está en PixTudio de serie...
+#ELSE
+Function set_text_z(valor);
+#ENDIF
+Begin
+	#IFNDEF MOD_TEXT_COMPAT
+	//text_z=valor;
+	#ENDIF
+	mod_text_z=valor;
+End

@@ -1,0 +1,43 @@
+// Project: Fade off process library
+// Description: Simple fade off function.
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+//Requires Javis Motion tween library!
+#IFNDEF __MOTION_TWEEN_LIB
+	include "../../../libs/rawrlab-fw/motion_tween.inc";
+#ENDIF
+
+Local
+	int _fading;
+End
+
+Process fade_off_process(int process_id, float duration, int wait_until_faded, int effectType);
+Private
+	int fading_speed;
+Begin
+	if(process_id==0)
+		process_id=father;
+	end
+
+	if(!exists(process_id))
+		return;
+	end
+	
+	fading_speed=div_fps*duration;
+	process_id._fading=1;
+	tween_to(&alpha,0,effectType,fading_speed);
+	if(wait_until_faded)
+		signal(process_id,s_freeze);
+	end
+	while(exists(process_id) and tweening)
+		process_id.alpha=alpha;
+		frame;
+	end
+	if(exists(process_id))
+		process_id._fading=0;
+		if(wait_until_faded)
+			signal(process_id,s_wakeup);
+		end
+	end
+End

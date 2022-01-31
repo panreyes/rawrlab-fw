@@ -1,0 +1,31 @@
+// String replace function v1.0
+// Description: TODO
+// Author: Pablo A. Navarro Reyes / RAWRLab © 2021
+// License: zlib
+
+#IFNDEF MOD_STRING_REPLACE
+#DEFINE MOD_STRING_REPLACE 1
+
+Function string string_replace(string buscar, string original, string reemplazar);
+Private
+	string str_output;
+Begin
+	if(strlen(original)<strlen(buscar))
+		return original;
+	end
+	loop
+		x=find(original,buscar);
+		if(x>-1)
+			if(x>0)
+				str_output=substr(original,0,x);
+			end
+			str_output+=reemplazar;
+			str_output+=substr(original,x+strlen(buscar));
+			original=str_output;
+		else
+			break;
+		end
+	end
+	return original;
+End
+#ENDIF
