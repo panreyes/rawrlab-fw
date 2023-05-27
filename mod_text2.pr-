@@ -28,7 +28,7 @@ include "../../../libs/rawrlab-fw/pxtcompat.h";
 
 //Declaraciones para BennuGD2
 #IFDEF __BENNUGD2__
-	DECLARE Process letra(file,graph,angle,local_type size_x,local_type size_y,int offset_x,offset_y,grandpa,efecto); end
+	DECLARE Process letra(fpg_fuente,file,graph,angle,local_type size_x,local_type size_y,int offset_x,offset_y,grandpa,efecto); end
 #ENDIF
 
 #IFNDEF MOD_TEXT_COMPAT
@@ -45,9 +45,13 @@ Const
 End
 
 Global
+	string translations_file_txt;
+	int texts_to_scroll = 0;
 	int matatextos=0;
 	int fading_text=0;
-	struct ops_fuentes[20];
+	int char_change_font = 255;
+	struct ops_fuentes[200];
+		int file;
 		int margen;
 		int espacio;
 		int modr=255;
@@ -65,6 +69,8 @@ Global
 			int steps=10;
 		end
 	end
+	float fpg_gamepad_size_multiplicator = 1.0;
+	float text_size_multiplicator = 1.0;
 	int num_traducciones=0;
 	string traducciones[300][1];
 	int text_effects_mode=0;
@@ -109,6 +115,13 @@ Begin
 End
 
 Function string traduceme(string texto);
+Private
+	pos_porcentual_1;
+	pos_porcentual_2;
+	#ifdef RAWR_DEBUG
+	string txt_a_buscar;
+	string line;
+	#endif
 Begin
 	//si no tenemos nada que traducir, volvemos ya
 	if(find(texto,"%")==-1 and find(texto,"+")==-1)
@@ -118,14 +131,37 @@ Begin
 	//para facilitar la faena, el campo que buscamos sí que está en uppercase
 	texto=my_ucase(texto);
 	
-	if(i=find(texto,"%")>-1)
-		if(find(texto,"%",i)>-1)
+	pos_porcentual_1 = find(texto,"%");
+	if(pos_porcentual_1>-1) // Si encontramos el primer porcentual
+		if(find(texto,"%",pos_porcentual_1+1)>-1) // Buscamos el segundo porcentual e intentamos reemplazar el texto
 			from i=0 to num_traducciones;
 				texto=string_replace("%"+traducciones[i][0]+"%",texto,traducciones[i][1]);
 			end	
-		end
-		if(find(texto,"%")>-1)
-			say("No se pudo traducir "+texto);
+			if(find(texto,"%",pos_porcentual_1+1)>-1) //Comprobamos si aún existe el segundo porcentual
+				say("No se pudo traducir "+texto);
+				#ifdef RAWR_DEBUG_ADD_LINES_TO_LANG_FILES
+					/*
+					
+					ULTRADESACTIVADO. SE HAN DAÑADO ARCHIVOS POR ÉSTO!!!
+					
+					pos_porcentual_2 = find(texto,"%",pos_porcentual_1+1);
+					if(file_exists("langs/"+ops.lang+".txt"))
+						txt_a_buscar = substr(texto,pos_porcentual_1+1,pos_porcentual_2-pos_porcentual_1-1);
+						say(txt_a_buscar);
+						if(find(translations_file_txt,txt_a_buscar) == -1)
+							if(translations_file_txt[len(translations_file_txt)-1] != chr(10))
+								translations_file_txt += ""+chr(13)+chr(10);
+							end
+							translations_file_txt += txt_a_buscar+"=%"+txt_a_buscar+"%";
+							
+							i = fopen("langs/"+ops.lang+".txt",O_WRITE);
+							fputs(i,translations_file_txt);
+							fclose(i);
+						end
+					end
+					*/
+				#endif
+			end
 		end
 	end
 	
@@ -182,6 +218,11 @@ Begin
 	z=mod_text_z;
 	soy_un_texto=1;
 	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
+	
 	//1. pintamos texto en un mapa de bits
 	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,0,0,0,centrado,efecto);
 	
@@ -200,6 +241,11 @@ Begin
 	resolution=global_resolution;
 	z=mod_text_z;
 	soy_un_texto=1;
+	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
 	
 	//1. pintamos texto en un mapa de bits
 	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,0,0,0,centrado,efecto);
@@ -220,6 +266,11 @@ Begin
 	z=mod_text_z;
 	soy_un_texto=1;
 	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
+	
 	//1. pintamos texto en un mapa de bits
 	dibujame_el_texto(fpg_fuente,texto,margen,rand_y_max,rand_angle_max,fixed_width,centrado,efecto);
 	
@@ -238,6 +289,11 @@ Begin
 	resolution=global_resolution;
 	z=mod_text_z;
 	soy_un_texto=1;
+	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
 	
 	//1. pintamos texto en un mapa de bits
 	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
@@ -261,6 +317,11 @@ Begin
 	resolution=global_resolution;
 	z=mod_text_z;
 	soy_un_texto=1;
+	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
 	
 	//1. pintamos texto en un mapa de bits
 	dibujame_el_texto(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
@@ -287,6 +348,11 @@ Begin
 	z=mod_text_z;
 	soy_un_texto=1;
 	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
+	
 	//1. pintamos texto en un mapa de bits
 	mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
 	
@@ -312,6 +378,11 @@ Begin
 	resolution=global_resolution;
 	z=mod_text_z;
 	soy_un_texto=1;
+	
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
 	
 	//1. pintamos texto en un mapa de bits
 	mi_txt=dibujame_el_texto(fpg_fuente,*numero,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0,centrado,0);
@@ -462,18 +533,20 @@ Private
 	int mi_bpp;
 	int x_centro;
 	int y_centro;
+	int non_printable_chars_count;
 Begin
 	//la primera vez que utilizamos una fuente, averiguamos el tamaño máximo de la fuente
 	if(ops_fuentes[fpg_fuente].max_height==0)
 		from i=1 to 999;
-			if(map_exists(fpg_fuente,i))
-				if(graphic_info(fpg_fuente,i,G_HEIGHT)>ops_fuentes[fpg_fuente].max_height)
-					ops_fuentes[fpg_fuente].max_height=graphic_info(fpg_fuente,i,G_HEIGHT);
+			if(map_exists(ops_fuentes[fpg_fuente].file,i))
+				if(graphic_info(ops_fuentes[fpg_fuente].file,i,G_HEIGHT)>ops_fuentes[fpg_fuente].max_height)
+					ops_fuentes[fpg_fuente].max_height=graphic_info(ops_fuentes[fpg_fuente].file,i,G_HEIGHT);
 				end
 			end
 		end
 	end
 	mi_alto_max=ops_fuentes[fpg_fuente].max_height;
+	
 	unkillable=1;
 	frame; //esto hace que no se muestre antes de tiempo! 
 	alpha=father.alpha;
@@ -501,22 +574,24 @@ Begin
 	
 	if(fpg_fuente<0) return 0; end
 	
+	file=ops_fuentes[fpg_fuente].file; //esto es confuso, cosas del pasado...
+	
 	//Si no tiene ni la A, ni la a, ni un 1, fallo.
-	if(!map_exists(fpg_fuente,97) and !map_exists(fpg_fuente,65) and !map_exists(fpg_fuente,48))
+	if(!map_exists(file,97) and !map_exists(file,65) and !map_exists(file,48))
 		return 0;
 	end
 	
-	file=fpg_fuente;
-	if(!map_exists(fpg_fuente,97)) //si no hay minúsculas, uppercase-amos
+	if(!map_exists(file,97)) //si no hay minúsculas, uppercase-amos
 		texto=my_ucase(texto);
 	end
 	
 	//1. contar el espacio horizontal y vertical
 	if(len(texto)>1)
 		from i=0 to len(texto)-1;
-			file=fpg_fuente;
+			file=ops_fuentes[fpg_fuente].file; //esto es confuso, cosas del pasado...
 			caracter_anterior=caracter;
 			caracter=asc(texto[i]);
+			
 			if(caracter<16) file=fpg_gamepad_fnt; end
 			#IFDEF EXPLOSIVEDINOS
 			if(caracter>15 and caracter<20)
@@ -526,6 +601,13 @@ Begin
 			#ENDIF
 			if(caracter==32)
 				x+=ops_fuentes[fpg_fuente].espacio+margen;
+			elseif(caracter == char_change_font) // Font change
+				i++; // Skip next char
+				fpg_fuente = texto[i];
+				if(ops_fuentes[fpg_fuente].max_height > mi_alto_max)
+					mi_alto_max=ops_fuentes[fpg_fuente].max_height;
+				end
+				non_printable_chars_count += 2;
 			else
 				if(i==0)
 					x=(graphic_info(file,caracter,G_WIDTH)/2);
@@ -534,16 +616,18 @@ Begin
 				else
 					x+=(graphic_info(file,caracter_anterior,G_WIDTH)/2)+margen+(graphic_info(file,caracter,G_WIDTH)/2);
 				end
-				#IFNDEF EXPLOSIVEDINOS
-					if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max)
-						mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
-					end
-				#ELSE
-					if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max and caracter!=901)
-						mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
-					end
-				#ENDIF
-			end	
+				if(file != fpg_gamepad_fnt)
+					#IFNDEF EXPLOSIVEDINOS
+						if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max)
+							mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
+						end
+					#ELSE
+						if(graphic_info(file,asc(texto[i]),G_HEIGHT)>mi_alto_max and caracter!=901)
+							mi_alto_max=graphic_info(file,asc(texto[i]),G_HEIGHT)+(rand_y_max*2);
+						end
+					#ENDIF
+				end
+			end
 		end
 	else
 		x=graphic_info(file,asc(texto[0]),G_WIDTH);
@@ -564,7 +648,7 @@ Begin
 	end
 	
 	if(fixed_width>0)
-		mi_ancho_total=fixed_width*(len(texto)+1);
+		mi_ancho_total=fixed_width*(len(texto)+1-non_printable_chars_count);
 	else
 		mi_ancho_total=x;
 	end
@@ -590,13 +674,50 @@ Begin
 	x_centro=x_centro*size_x/100;
 	y_centro=y_centro*size_y/100;
 	
+	priority=father.priority;
+	alpha=father.alpha;
+	z=father.z;
+	ctype=father.ctype;
+	cnumber=father.cnumber;
+	
+	non_printable_chars_count = 0;
+	
 	//3. ponemos todas las letracas
 	from i=0 to len(texto)-1;
+		// TESTING:
+		if(father.size_x!=100 or father.size_y!=100)
+			size_x=father.size_x;
+			size_y=father.size_y;
+		else
+			size_x=father.size;
+			size_y=father.size;
+		end
+		size_x = size_x * text_size_multiplicator;
+		size_y = size_y * text_size_multiplicator;
+		// -------
+
 		caracter_anterior=caracter;
 		caracter=asc(texto[i]);
-		file=fpg_fuente;
+		file=ops_fuentes[fpg_fuente].file; //esto es confuso, cosas del pasado...
 		if(caracter<16)
 			file=fpg_gamepad_fnt;
+			size_x = size_x * fpg_gamepad_size_multiplicator;
+			size_y = size_y * fpg_gamepad_size_multiplicator;
+		elseif(caracter == char_change_font) // Font change
+			i++; // Skip next char
+			fpg_fuente = texto[i];
+			// mi_alto_max = ops_fuentes[fpg_fuente].max_height; // esto provoca problemas
+			non_printable_chars_count += 2;
+		else
+			if(father.size_x!=100 or father.size_y!=100)
+				size_x=father.size_x;
+				size_y=father.size_y;
+			else
+				size_x=father.size;
+				size_y=father.size;
+			end
+			size_x = size_x * text_size_multiplicator;
+			size_y = size_y * text_size_multiplicator;
 		end
 		#IFDEF EXPLOSIVEDINOS
 		if(caracter>15 and caracter<20)
@@ -604,14 +725,14 @@ Begin
 			caracter=901;
 		end
 		#ENDIF
-		if(graphic_info(file,caracter,G_HEIGHT)>0 or caracter==32)
+		if((graphic_info(file,caracter,G_HEIGHT)>0 or caracter==32) and caracter!=char_change_font)
 			if(rand_y_max>0) rand_y=rand(-rand_y_max*2,0); end
 			if(rand_angle_max>0) rand_angle=rand(-rand_angle_max,rand_angle_max); end
 			if(fixed_width)
-				x=fixed_width+(fixed_width*(i));
+				x=fixed_width+(fixed_width*(i - non_printable_chars_count));
 				//y=mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y;
 				y=mi_alto_max/2+rand_y;
-				letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+				letra(fpg_fuente,file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
 			else
 				if(caracter==32)
 					x+=(ops_fuentes[fpg_fuente].espacio+margen)*size_x/100;
@@ -619,7 +740,7 @@ Begin
 					elseif(caracter==901) //XD
 						x+=(30+margen)*size_x/100;
 						y=(mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y)*size_y/100;
-						letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+						letra(fpg_fuente,file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
 					#ENDIF
 				else
 					if(i==0)
@@ -629,11 +750,13 @@ Begin
 					end
 					//y=(mi_alto_max-(graphic_info(file,caracter,G_HEIGHT)/2)+rand_y)*size_y/100;
 					y=(mi_alto_max/2+rand_y)*size_y/100;
-					letra(file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
+					letra(fpg_fuente,file,caracter,rand_angle,size_x,size_y,x_centro+x,y_centro+y,father,efecto);
 				end
 			end
 		else
-			say("No se ha encontrado la letra "+chr(texto[i])+" (nº "+atoi(texto[i])+") en el FPG "+file);
+			#ifdef RAWR_DEBUG_VERBOSE
+				say("No se ha encontrado la letra "+chr(texto[i])+" (nº "+atoi(texto[i])+") en el FPG "+file);
+			#endif
 		end
 	end
 	
@@ -648,13 +771,18 @@ Begin
 	end
 End
 
-Process letra(file,graph,angle,local_type size_x,size_y,int offset_x,offset_y,grandpa,efecto);
+Process letra(fpg_fuente,file,graph,angle,local_type size_x,size_y,int offset_x,offset_y,grandpa,efecto);
 Private
 	int size_x_out;
 	int size_y_out;
 	int angle_add;
 	int id_letra_sombra;
 Begin
+	if(texts_to_scroll)
+		ctype = c_scroll;
+		cnumber = texts_to_scroll;
+	end
+
 	unkillable=1;
 	resolution=global_resolution;
 	
@@ -810,7 +938,7 @@ Begin
 		cnumber=father.cnumber;
 		if(action==-1 or father.action==-1) break; end
 		
-		if(ops_fuentes[file].sombra.x_offset!=0 or ops_fuentes[file].sombra.y_offset!=0)
+		if(ops_fuentes[fpg_fuente].sombra.x_offset!=0 or ops_fuentes[fpg_fuente].sombra.y_offset!=0)
 			if(!id_letra_sombra)
 				id_letra_sombra=letra_sombra();
 			end
@@ -824,6 +952,7 @@ Process letra_sombra();
 Private
 	int current_step;
 Begin
+	say("Esto está ocurriendo!"+id);
 	while(exists(father))
 		priority=father.priority-1;
 		file=father.file;
@@ -863,6 +992,54 @@ End
 
 Function text_width(int crap1,string crap2);
 Begin
+End
+
+Function find_free_fpgfnt();
+Begin
+	from i=1 to 200;
+		if(ops_fuentes[i].file == 0)
+			return i;
+		end
+	end
+	return -1;
+End
+
+Function fpgfnt_unload(int fpgfnt);
+Begin
+	if(fpgfnt < 1) 
+		return; 
+	end
+	if(ops_fuentes[fpgfnt].file)
+		fpg_unload(ops_fuentes[fpgfnt].file);
+	end
+	
+	// Reset fpgfnt values
+	ops_fuentes[fpgfnt].file = 0;
+	ops_fuentes[fpgfnt].margen = 0;
+	ops_fuentes[fpgfnt].espacio = 0;
+	ops_fuentes[fpgfnt].modr=255;
+	ops_fuentes[fpgfnt].modg=255;
+	ops_fuentes[fpgfnt].modb=255;
+	ops_fuentes[fpgfnt].fixed_width = 0;
+	ops_fuentes[fpgfnt].max_height = 0;
+	ops_fuentes[fpgfnt].sombra.x_offset = 0;
+	ops_fuentes[fpgfnt].sombra.y_offset = 0;
+	ops_fuentes[fpgfnt].sombra.r = 0;
+	ops_fuentes[fpgfnt].sombra.g = 0;
+	ops_fuentes[fpgfnt].sombra.b = 0;
+	ops_fuentes[fpgfnt].sombra.a = 255;
+	ops_fuentes[fpgfnt].sombra.steps = 10;
+	
+	#ifdef RAWR_DEBUG_VERBOSE
+	say("Unloaded FPGFNT "+fpgfnt);
+	#endif
+End
+
+Function fpgfnt_load(string fuente_a_cargar);
+Begin
+	i = find_free_fpgfnt();
+	ops_fuentes[i].file = fpg_load(fuente_a_cargar);
+	return i;
 End
 
 Function _fnt_load(string fuente_a_cargar);
@@ -1000,7 +1177,9 @@ Begin
 				end
 			end
 		else
-			say("No se ha encontrado la letra "+chr(texto[foo])+" en el FPG "+file);
+			#ifdef RAWR_DEBUG_VERBOSE
+				say("No se ha encontrado la letra "+chr(texto[foo])+" en el FPG "+file);
+			#endif
 		end
 	end
 	
@@ -1012,7 +1191,11 @@ End
 #IFNDEF EXPLOSIVEDINOS
 #IFNDEF RIPOLLES
 
+#IFDEF MOD_TEXT_COMPAT
+Function _write_in_map(fpg_fuente,string texto,int centrado);
+#ELSE
 Function write_in_map(fpg_fuente,string texto,int centrado);
+#ENDIF
 Begin
 	//1. pintamos texto en un mapa de bits
 	graph=dibujame_el_texto_en_un_mapa(fpg_fuente,texto,ops_fuentes[fpg_fuente].margen,rand_y,rand_angle,0);
@@ -1089,6 +1272,11 @@ Begin
 		#ELSE
 		fclose(i);
 		#ENDIF
+		
+		#ifdef RAWR_DEBUG
+		translations_file_txt = file("langs/"+ops.lang+".txt");
+		#endif
+		
 	else
 		say("Couldn't open langs/"+ops.lang+".txt");
 	end

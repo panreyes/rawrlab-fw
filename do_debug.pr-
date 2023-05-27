@@ -16,22 +16,25 @@ Begin
 	do_debug_id=id;
 	unkillable=1;
 	loop
-		if(key(_space))
-			set_fps(0,0);
-			while(key(_space)) frame; end
-			set_fps(60,0);
-		end
 		do_debug_count_processes();
 		do_debug_count_texts();
 		do_debug_count_letters();
+		// say("processes (without texts & letters) "+do_debug_process_number+", texts "+do_debug_text_number+", letters "+do_debug_letters_number);
 		frame;
 	end
 End
 
 Function do_debug_count_processes();
 Begin
-	while(get_id(0)!=0)
-		x++;
+	while((y = get_id(0))!=0)
+		if(!y.soy_un_texto and y.reserved.process_type != (type letra))
+			x++;
+			/*
+			if(y.process_name != "")
+				say(" - " + y.process_name);
+			end
+			*/
+		end
 	end
 	do_debug_process_number=x;
 End

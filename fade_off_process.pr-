@@ -12,6 +12,9 @@ Local
 	int _fading;
 End
 
+#define process_fade_off fade_off_process
+#define process_fade_out fade_off_process
+
 Process fade_off_process(int process_id, float duration, int wait_until_faded, int effectType);
 Private
 	int fading_speed;
@@ -36,6 +39,7 @@ Begin
 	end
 	if(exists(process_id))
 		process_id._fading=0;
+		process_id.alpha=0;
 		if(wait_until_faded)
 			signal(process_id,s_wakeup);
 		end

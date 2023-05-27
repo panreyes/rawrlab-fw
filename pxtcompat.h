@@ -5,6 +5,11 @@
 
 #IFNDEF __PXTCOMPAT__
 	#DEFINE __PXTCOMPAT__ 1
+	
+	// Quick fix for RAWRLAB (it's PixTudio with a few changes in the end!)
+	#IFDEF __RAWRLAB__
+		#DEFINE __PIXTUDIO__ 1
+	#ENDIF
 
 	//========================================= MODULES
 	
@@ -12,6 +17,9 @@
 		#DEFINE MODULES_ALREADY_IMPORTED 1
 		#IFDEF __BENNUGD__
 			#DEFINE USE_MOD_JOY 1
+			#IFNDEF OS_ANDROID
+				#DEFINE OS_ANDROID 1003
+			#ENDIF
 			import "mod_dir";
 			import "mod_draw";
 			import "mod_effects";

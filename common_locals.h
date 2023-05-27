@@ -7,6 +7,9 @@ Local
 	int j;
 	int player;
 	int action;
+	int attached_to;
+	int _attached_x;
+	int _attached_y;
 End
 
 #ENDIF

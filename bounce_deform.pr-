@@ -1,4 +1,9 @@
-Process bounce_deform(int process_id, float quantity, float size_x_base, float size_y_base);
+Local
+	int bounce_deforming = 0;
+End
+
+// This process monitors the target instance and changes its size depending on its speed
+Process bounce_deform_movement(int process_id, float quantity, float size_x_base, float size_y_base);
 Private
 	float x_speed;
 	float y_speed;
@@ -12,18 +17,34 @@ Private
 	
 	int size_x_objective;
 	int size_y_objective;
+	
+	//float size_x_base;
+	//float size_y_base;
 Begin
 	if(!exists(process_id))
 		return;
 	end
+	if(process_id.bounce_deforming) return; end
+	
+	process_id.bounce_deforming = 1;
 	
 	/*
 	write_int(0,0,20,0,&process_id.size_x);
 	write_int(0,0,30,0,&process_id.size_y);
 	*/
 	
+	/*
+	if(process_id.size_x == 100 and process_id.size_y == 100)
+		size_x_base = size_y_base = process_id.size;
+	else
+		size_x_base = process_id.size_x;
+		size_y_base = process_id.size_y;
+	end
+	*/
+	
 	x_before=process_id.x;
 	y_before=process_id.y;
+	
 	while(exists(process_id))
 		size_x_objective=0;
 		size_y_objective=0;
@@ -52,6 +73,122 @@ Begin
 		
 		frame;
 	end
+	
+	if(exists(process_id))
+		process_id.bounce_deforming = 0;
+	end
+End
+
+Process bounce_deform_vertical(int process_id, int quantity, float speed, int repeats);
+Private
+	int size_x_base;
+	int size_y_base;
+	float f_size_y;
+	float f_size_x;
+Begin
+	if(!exists(process_id))
+		return;
+	end
+	if(process_id.bounce_deforming) return; end
+	
+	process_id.bounce_deforming = 1;
+	
+	speed = abs(speed);
+	
+	/*
+	write_int(0,0,20,0,&process_id.size_x);
+	write_int(0,0,30,0,&process_id.size_y);
+	*/
+	
+	if(process_id.size_x == 100 and process_id.size_y == 100)
+		size_x_base = size_y_base = process_id.size;
+	else
+		size_x_base = process_id.size_x;
+		size_y_base = process_id.size_y;
+	end
+	
+	f_size_x = size_x_base;
+	f_size_y = size_y_base;
+	
+	if(repeats < 0) repeats = 9999; end
+	
+	from i=0 to repeats;
+		while(exists(process_id) and f_size_y > size_y_base - quantity)
+			f_size_y -= speed;
+			f_size_x += speed * 0.5;
+			process_id.size_x = f_size_x;
+			process_id.size_y = f_size_y;
+			frame;
+		end
+		while(exists(process_id) and f_size_y < size_y_base)
+			f_size_y += speed;
+			f_size_x -= speed * 0.5;
+			process_id.size_x = f_size_x;
+			process_id.size_y = f_size_y;
+			frame;
+		end
+	end
+	if(exists(process_id))
+		process_id.size_x = size_x_base;		
+		process_id.size_y = size_y_base;
+		process_id.bounce_deforming = 0;
+	end
+End
+
+Process bounce_deform_horizontal(int process_id, int quantity, float speed, int repeats);
+Private
+	int size_x_base;
+	int size_y_base;
+	float f_size_y;
+	float f_size_x;
+Begin
+	if(!exists(process_id))
+		return;
+	end
+	if(process_id.bounce_deforming) return; end
+	
+	process_id.bounce_deforming = 1;
+	
+	speed = abs(speed);
+	
+	/*
+	write_int(0,0,20,0,&process_id.size_x);
+	write_int(0,0,30,0,&process_id.size_y);
+	*/
+	
+	if(process_id.size_x == 100 and process_id.size_y == 100)
+		size_x_base = size_y_base = process_id.size;
+	else
+		size_x_base = process_id.size_x;
+		size_y_base = process_id.size_y;
+	end
+	
+	f_size_x = size_x_base;
+	f_size_y = size_y_base;
+	
+	if(repeats < 0) repeats = 9999; end
+	
+	from i=0 to repeats;
+		while(exists(process_id) and f_size_x > size_x_base - quantity)
+			f_size_x -= speed;
+			f_size_y += speed * 0.5;
+			process_id.size_x = f_size_x;
+			process_id.size_y = f_size_y;
+			frame;
+		end
+		while(exists(process_id) and f_size_x < size_x_base)
+			f_size_x += speed;
+			f_size_y -= speed * 0.5;
+			process_id.size_x = f_size_x;
+			process_id.size_y = f_size_y;
+			frame;
+		end
+	end
+	if(exists(process_id))
+		process_id.size_x = size_x_base;
+		process_id.size_y = size_y_base;
+		process_id.bounce_deforming = 0;
+	end
 End
 
 Process bounce_EVERYTHING();
@@ -60,7 +197,7 @@ Begin
 		if(key(_b))
 			while(key(_b)) frame; end
 			while(i=get_id(all_process))
-				bounce_deform(i,40,100,100);
+				bounce_deform_movement(i,40, 100, 100);
 			end
 		end
 		frame;

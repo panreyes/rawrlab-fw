@@ -8,16 +8,39 @@
 //  get_button(player,button);
 //    player: Number of the player.
 //    button: Button identifier (check the Const list, the buttons start with "b_" )
+//  get_button_event(player,button,event);
+//    player: Number of the player.
+//    button: Button identifier (check the Const list, the buttons start with "b_" )
+//    event:  Type of event (on_press, on_release)
 
 // Options:
 #IFNDEF GAMEPADS_DEFAULT_MAX_PLAYERS
 	#DEFINE GAMEPADS_DEFAULT_MAX_PLAYERS 8
 #ENDIF
+#IFNDEF GAMEPADS_DEFAULT_DPAD_SIZE
+	#DEFINE GAMEPADS_DEFAULT_DPAD_SIZE 80
+#ENDIF
 #IFNDEF GAMEPADS_DEFAULT_BUTTON_SIZE
 	#DEFINE GAMEPADS_DEFAULT_BUTTON_SIZE 80
 #ENDIF
+#IFNDEF GAMEPADS_DEFAULT_BUTTON_SEPARATION
+	#DEFINE GAMEPADS_DEFAULT_BUTTON_SEPARATION 40
+#ENDIF
+#IFNDEF GAMEPADS_DEFAULT_NUMBER_OF_BUTTONS
+	#DEFINE GAMEPADS_DEFAULT_NUMBER_OF_BUTTONS 3
+#ENDIF
+#IFNDEF GAMEPADS_DEFAULT_BUTTON_OFFSET_X
+	#DEFINE GAMEPADS_DEFAULT_BUTTON_OFFSET_X 0
+#ENDIF
+#IFNDEF GAMEPADS_DEFAULT_BUTTON_OFFSET_Y
+	#DEFINE GAMEPADS_DEFAULT_BUTTON_OFFSET_Y 0
+#ENDIF
+#IFNDEF GAMEPADS_EXPORT_BUTTONS_PNGS
+	#DEFINE GAMEPADS_EXPORT_BUTTONS_PNGS 0
+#ENDIF
 
-// Compatibilty layers from PixTudio with BennuGD1/2
+
+// Compatibity layers from PixTudio with BennuGD1/2
 include "../../../libs/rawrlab-fw/pxtcompat.h";
 
 #IFDEF __BENNUGD2__
@@ -175,6 +198,11 @@ Global
 		int dont_reset=0;
 		int net_player=0;
 	end
+	
+	struct vgamepad_button_positions[num_buttons];
+		int x;
+		int y;
+	end
 
 #IFDEF __NINTENDO_SWITCH__
 	int b_accept=b_3;
@@ -201,9 +229,12 @@ Global
 	int graph_boton_abajo;
 	
 	int id_gamepad;
-	int gamepad_button_separation=40;
+	int gamepad_button_separation=GAMEPADS_DEFAULT_BUTTON_SEPARATION;
+	int gamepad_dpad_size=GAMEPADS_DEFAULT_DPAD_SIZE;
 	int gamepad_button_size=GAMEPADS_DEFAULT_BUTTON_SIZE;
-	int gamepad_botones=3;
+	int gamepad_botones=GAMEPADS_DEFAULT_NUMBER_OF_BUTTONS;
+	int gamepad_button_offset_x=GAMEPADS_DEFAULT_BUTTON_OFFSET_X;
+	int gamepad_button_offset_y=GAMEPADS_DEFAULT_BUTTON_OFFSET_Y;
 	
 	int num_gamepads_antes;
 	int num_gamepads_ahora;
@@ -313,7 +344,7 @@ Begin
 		#ENDIF
 
 		//en android, si estamos en 2º plano, nos vamos al aire
-		if(os_id==1003 and !focus_status)
+		if(os_id==os_android and !focus_status)
 			#IFDEF ANDROID_EXIT_FUNCTION
 				salir_android();
 			#ELSE
@@ -430,6 +461,11 @@ Begin
 					if(abs(axis_x)>joystick_deadzone or abs(axis_y)>joystick_deadzone)
 						gamepad[player].buttons[b_right_stick_angle]=fget_angle(0,0,axis_x,axis_y);
 					end
+					
+					//TESTING!
+					if(key(_1)) gamepad[player].buttons[b_1]=1; end
+					if(key(_2)) gamepad[player].buttons[b_2]=1; end
+					if(key(_3)) gamepad[player].buttons[b_3]=1; end
 				end
 			end
 			
@@ -537,11 +573,10 @@ Begin
 	i=0;
 	j=0;
 	
-	if(os_id==1003) //os_android! (en número por compatibilidad)
+	if(os_id==os_android) //os_android! (en número por compatibilidad)
 		key_b_salir1=102; //keycodeback
 		key_b_salir2=_ESC;
-	end
-	
+	end	
 	
 	#IFDEF TACTIL
 		possible_players=1;
@@ -581,15 +616,28 @@ End
 
 Function gamepads_autoassign();
 Begin
+	// It assigns every possible controller:
 	if(possible_players>0)
-		from i=1 to possible_players;
-			p[i].control=i;
-			say(i);
-		end
 		#IFNDEF __NINTENDO_SWITCH__
-			/*i=p[1].control;
+			from i=1 to possible_players;
+				p[i].control=i;
+			end
+
+			// If NOT Nintendo Switch, we put the keyboard as the last gamepad available
+			i=p[1].control;
 			p[1].control=p[possible_players].control;
-			p[possible_players].control=i;*/
+			p[possible_players].control=i;
+		#ELSE
+			// TESTING: Parece que cuando hay más de un jugador, Switch se hace la picha un lío... O más bien, genera nuevos ids de gamepads
+			if(possible_players==1)
+				from i=1 to possible_players;
+					p[i].control=i;
+				end
+			else
+				from i=1 to possible_players;
+					p[i].control=i+1;
+				end
+			end
 		#ENDIF
 	end
 End
@@ -605,28 +653,32 @@ Begin
 	unkillable=1;
 	
 	if(no_vgamepad==0)
-		boton_tactil(gamepad_button_separation*2,alto_pantalla-(gamepad_button_separation*3),graph_boton_arriba,1,b_arriba);
-		boton_tactil(gamepad_button_separation*1,alto_pantalla-(gamepad_button_separation*2),graph_boton_izquierda,1,b_izquierda);
-		boton_tactil(gamepad_button_separation*3,alto_pantalla-(gamepad_button_separation*2),graph_boton_derecha,1,b_derecha);
-		boton_tactil(gamepad_button_separation*2,alto_pantalla-gamepad_button_separation,graph_boton_abajo,1,b_abajo);
+		boton_tactil(gamepad_button_offset_x+gamepad_button_separation*2,gamepad_button_offset_y+alto_pantalla-(gamepad_button_separation*3),graph_boton_arriba,1,b_arriba);
+		boton_tactil(gamepad_button_offset_x+gamepad_button_separation*1,gamepad_button_offset_y+alto_pantalla-(gamepad_button_separation*2),graph_boton_izquierda,1,b_izquierda);
+		boton_tactil(gamepad_button_offset_x+gamepad_button_separation*3,gamepad_button_offset_y+alto_pantalla-(gamepad_button_separation*2),graph_boton_derecha,1,b_derecha);
+		boton_tactil(gamepad_button_offset_x+gamepad_button_separation*2,gamepad_button_offset_y+alto_pantalla-gamepad_button_separation,graph_boton_abajo,1,b_abajo);
 	
-		boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(7*pi/6,gamepad_button_separation),alto_pantalla-(gamepad_button_separation*2)+get_disty(7*pi/6,gamepad_button_separation*2/3),graph_boton_1,1,b_1);
-		boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(11*pi/6,gamepad_button_separation),(alto_pantalla-gamepad_button_separation*2)+get_disty(11*pi/6,gamepad_button_separation*2/3),graph_boton_2,1,b_2);
-		if(gamepad_botones==3)
-			boton_tactil(ancho_pantalla-(gamepad_button_separation*2)+get_distx(pi/2,gamepad_button_separation/1),alto_pantalla-(gamepad_button_separation*2)+get_disty(pi/2,gamepad_button_separation/1),graph_boton_3,1,b_3);
+		if(gamepad_botones>=1)
+			if(vgamepad_button_positions[1].x != 0 and vgamepad_button_positions[1].y != 0)
+				boton_tactil(vgamepad_button_positions[1].x,vgamepad_button_positions[1].y,graph_boton_1,1,b_1);
+			else
+				boton_tactil(-gamepad_button_offset_x+ancho_pantalla-(gamepad_button_separation*2)+get_distx(7*pi/6,gamepad_button_separation),alto_pantalla-(gamepad_button_separation*2)+get_disty(7*pi/6,gamepad_button_separation*2/3),graph_boton_1,1,b_1);
+			end
+		end
+		if(gamepad_botones>=2)
+			if(vgamepad_button_positions[2].x != 0 and vgamepad_button_positions[2].y != 0)
+				boton_tactil(vgamepad_button_positions[2].x,vgamepad_button_positions[2].y,graph_boton_2,1,b_2);
+			else
+				boton_tactil(-gamepad_button_offset_x+ancho_pantalla-(gamepad_button_separation*2)+get_distx(11*pi/6,gamepad_button_separation),(alto_pantalla-gamepad_button_separation*2)+get_disty(11*pi/6,gamepad_button_separation*2/3),graph_boton_2,1,b_2);
+			end
+		end
+		if(gamepad_botones>=3)
+			boton_tactil(-gamepad_button_offset_x+ancho_pantalla-(gamepad_button_separation*2)+get_distx(pi/2,gamepad_button_separation/1),alto_pantalla-(gamepad_button_separation*2)+get_disty(pi/2,gamepad_button_separation/1),graph_boton_3,1,b_3);
 		end
 	end
 	
 	priority=7;
-	loop	
-		//en android, si estamos en 2º plano, nos vamos al aire
-		//esto ya figura en el código del controlador
-		/*
-		if(os_id==1003 and !focus_status)
-			salir_android();
-		end
-		*/
-	
+	loop
 #IFDEF TACTIL
 		for(foo=0; foo<10; foo++)
 			if(multi_info(foo, "ACTIVE") > 0)
@@ -678,7 +730,7 @@ Begin
 	drawing_map(0,graph_dedo);
 	draw_fcircle(gamepad_button_size/3,gamepad_button_size/3,gamepad_button_size/3-1);
 
-	if(os_id!=1003) mouse.graph=graph_dedo; end
+	if(os_id!=os_android) mouse.graph=graph_dedo; end
 	
 	graph_boton_1=map_new(gamepad_button_size*1.5,gamepad_button_size*1.5,32);
 	drawing_map(0,graph_boton_1);
@@ -701,92 +753,94 @@ Begin
 	drawing_color(rgb(255,255,255));
 	draw_circle(gamepad_button_size*1.5/2,gamepad_button_size*1.5/2,gamepad_button_size*1.5/2-1);
 	
-	graph_boton_arriba=map_new(2*gamepad_button_size,gamepad_button_size,32);
+	graph_boton_arriba=map_new(2*gamepad_dpad_size,gamepad_dpad_size,32);
 	drawing_map(0,graph_boton_arriba);
 	drawing_color(rgb(128,128,128));
 	foo=0;
-	from foo2=0 to gamepad_button_size/2;
-		draw_line(gamepad_button_size-foo,foo2,gamepad_button_size+foo,foo2);
+	from foo2=0 to gamepad_dpad_size/2;
+		draw_line(gamepad_dpad_size-foo,foo2,gamepad_dpad_size+foo,foo2);
 		foo+=2;
 	end
-	from foo2=gamepad_button_size/2 to gamepad_button_size;
-		draw_line(gamepad_button_size-foo,foo2,gamepad_button_size+foo,foo2);
+	from foo2=gamepad_dpad_size/2 to gamepad_dpad_size;
+		draw_line(gamepad_dpad_size-foo,foo2,gamepad_dpad_size+foo,foo2);
 		foo-=1;
 	end
 	drawing_color(rgb(255,255,255));
-	draw_line(0,gamepad_button_size/2,gamepad_button_size,0);
-	draw_line(gamepad_button_size,0,2*gamepad_button_size,gamepad_button_size/2);
-	draw_line(2*gamepad_button_size,gamepad_button_size/2,6*gamepad_button_size/4,gamepad_button_size);
-	draw_line(6*gamepad_button_size/4,gamepad_button_size,2*gamepad_button_size/4,gamepad_button_size);
-	draw_line(2*gamepad_button_size/4,gamepad_button_size,0,gamepad_button_size/2);
+	draw_line(0,gamepad_dpad_size/2,gamepad_dpad_size,0);
+	draw_line(gamepad_dpad_size,0,2*gamepad_dpad_size,gamepad_dpad_size/2);
+	draw_line(2*gamepad_dpad_size,gamepad_dpad_size/2,6*gamepad_dpad_size/4,gamepad_dpad_size);
+	draw_line(6*gamepad_dpad_size/4,gamepad_dpad_size,2*gamepad_dpad_size/4,gamepad_dpad_size);
+	draw_line(2*gamepad_dpad_size/4,gamepad_dpad_size,0,gamepad_dpad_size/2);
 	
-	graph_boton_abajo=map_new(2*gamepad_button_size,gamepad_button_size,32);
+	graph_boton_abajo=map_new(2*gamepad_dpad_size,gamepad_dpad_size,32);
 	drawing_map(0,graph_boton_abajo);
 	drawing_color(rgb(128,128,128));
 	foo=0;
-	from foo2=0 to gamepad_button_size/2;
-		draw_line(gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo,gamepad_button_size-foo2);
+	from foo2=0 to gamepad_dpad_size/2;
+		draw_line(gamepad_dpad_size-foo,gamepad_dpad_size-foo2,gamepad_dpad_size+foo,gamepad_dpad_size-foo2);
 		foo+=2;
 	end
-	from foo2=gamepad_button_size/2 to gamepad_button_size;
-		draw_line(gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo,gamepad_button_size-foo2);
+	from foo2=gamepad_dpad_size/2 to gamepad_dpad_size;
+		draw_line(gamepad_dpad_size-foo,gamepad_dpad_size-foo2,gamepad_dpad_size+foo,gamepad_dpad_size-foo2);
 		foo-=1;
 	end
 	drawing_color(rgb(255,255,255));
-	draw_line(0,gamepad_button_size/2,gamepad_button_size,gamepad_button_size);
-	draw_line(gamepad_button_size,gamepad_button_size,2*gamepad_button_size,gamepad_button_size/2);
-	draw_line(2*gamepad_button_size,gamepad_button_size/2,6*gamepad_button_size/4,0);
-	draw_line(6*gamepad_button_size/4,0,2*gamepad_button_size/4,0);
-	draw_line(2*gamepad_button_size/4,0,0,gamepad_button_size/2);
+	draw_line(0,gamepad_dpad_size/2,gamepad_dpad_size,gamepad_dpad_size);
+	draw_line(gamepad_dpad_size,gamepad_dpad_size,2*gamepad_dpad_size,gamepad_dpad_size/2);
+	draw_line(2*gamepad_dpad_size,gamepad_dpad_size/2,6*gamepad_dpad_size/4,0);
+	draw_line(6*gamepad_dpad_size/4,0,2*gamepad_dpad_size/4,0);
+	draw_line(2*gamepad_dpad_size/4,0,0,gamepad_dpad_size/2);
 	
-	graph_boton_izquierda=map_new(gamepad_button_size,2*gamepad_button_size,32);
+	graph_boton_izquierda=map_new(gamepad_dpad_size,2*gamepad_dpad_size,32);
 	drawing_map(0,graph_boton_izquierda);
 	drawing_color(rgb(128,128,128));
 	foo=0;
-	from foo2=0 to gamepad_button_size/2;
-		draw_line(foo2,gamepad_button_size-foo,foo2,gamepad_button_size+foo);
+	from foo2=0 to gamepad_dpad_size/2;
+		draw_line(foo2,gamepad_dpad_size-foo,foo2,gamepad_dpad_size+foo);
 		foo+=2;
 	end
-	from foo2=gamepad_button_size/2 to gamepad_button_size;
-		draw_line(foo2,gamepad_button_size-foo,foo2,gamepad_button_size+foo);
+	from foo2=gamepad_dpad_size/2 to gamepad_dpad_size;
+		draw_line(foo2,gamepad_dpad_size-foo,foo2,gamepad_dpad_size+foo);
 		foo-=1;
 	end
 	drawing_color(rgb(255,255,255));
-	draw_line(gamepad_button_size/2,0,0,gamepad_button_size);
-	draw_line(0,gamepad_button_size,gamepad_button_size/2,2*gamepad_button_size);
-	draw_line(gamepad_button_size/2,2*gamepad_button_size,gamepad_button_size,6*gamepad_button_size/4);
-	draw_line(gamepad_button_size,6*gamepad_button_size/4,gamepad_button_size,2*gamepad_button_size/4);
-	draw_line(gamepad_button_size,2*gamepad_button_size/4,gamepad_button_size/2,0);
+	draw_line(gamepad_dpad_size/2,0,0,gamepad_dpad_size);
+	draw_line(0,gamepad_dpad_size,gamepad_dpad_size/2,2*gamepad_dpad_size);
+	draw_line(gamepad_dpad_size/2,2*gamepad_dpad_size,gamepad_dpad_size,6*gamepad_dpad_size/4);
+	draw_line(gamepad_dpad_size,6*gamepad_dpad_size/4,gamepad_dpad_size,2*gamepad_dpad_size/4);
+	draw_line(gamepad_dpad_size,2*gamepad_dpad_size/4,gamepad_dpad_size/2,0);
 	
-	graph_boton_derecha=map_new(gamepad_button_size,2*gamepad_button_size,32);
+	graph_boton_derecha=map_new(gamepad_dpad_size,2*gamepad_dpad_size,32);
 	drawing_map(0,graph_boton_derecha);
 	drawing_color(rgb(128,128,128));
 	foo=0;
-	from foo2=0 to gamepad_button_size/2;
-		draw_line(gamepad_button_size-foo2,gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo);
+	from foo2=0 to gamepad_dpad_size/2;
+		draw_line(gamepad_dpad_size-foo2,gamepad_dpad_size-foo,gamepad_dpad_size-foo2,gamepad_dpad_size+foo);
 		foo+=2;
 	end
-	from foo2=gamepad_button_size/2 to gamepad_button_size;
-		draw_line(gamepad_button_size-foo2,gamepad_button_size-foo,gamepad_button_size-foo2,gamepad_button_size+foo);
+	from foo2=gamepad_dpad_size/2 to gamepad_dpad_size;
+		draw_line(gamepad_dpad_size-foo2,gamepad_dpad_size-foo,gamepad_dpad_size-foo2,gamepad_dpad_size+foo);
 		foo-=1;
 	end
 	drawing_color(rgb(255,255,255));
-	draw_line(gamepad_button_size/2,0,gamepad_button_size,gamepad_button_size);
-	draw_line(gamepad_button_size,gamepad_button_size,gamepad_button_size/2,2*gamepad_button_size);
-	draw_line(gamepad_button_size/2,2*gamepad_button_size,0,6*gamepad_button_size/4);
-	draw_line(0,6*gamepad_button_size/4,0,2*gamepad_button_size/4);
-	draw_line(0,2*gamepad_button_size/4,gamepad_button_size/2,0);
+	draw_line(gamepad_dpad_size/2,0,gamepad_dpad_size,gamepad_dpad_size);
+	draw_line(gamepad_dpad_size,gamepad_dpad_size,gamepad_dpad_size/2,2*gamepad_dpad_size);
+	draw_line(gamepad_dpad_size/2,2*gamepad_dpad_size,0,6*gamepad_dpad_size/4);
+	draw_line(0,6*gamepad_dpad_size/4,0,2*gamepad_dpad_size/4);
+	draw_line(0,2*gamepad_dpad_size/4,gamepad_dpad_size/2,0);
 	
 	// You may save these generated buttons!
-	/*i=1;
-	png_save(0,graph_dedo,(i++)+".png");
-	png_save(0,graph_boton_1,(i++)+".png");
-	png_save(0,graph_boton_2,(i++)+".png");
-	png_save(0,graph_boton_3,(i++)+".png");
-	png_save(0,graph_boton_arriba,(i++)+".png");
-	png_save(0,graph_boton_abajo,(i++)+".png");
-	png_save(0,graph_boton_izquierda,(i++)+".png");
-	png_save(0,graph_boton_derecha,(i++)+".png");*/
+	if(GAMEPADS_EXPORT_BUTTONS_PNGS)
+		i=1;
+		png_save(0,graph_dedo,(i++)+".png");
+		png_save(0,graph_boton_1,(i++)+".png");
+		png_save(0,graph_boton_2,(i++)+".png");
+		png_save(0,graph_boton_3,(i++)+".png");
+		png_save(0,graph_boton_arriba,(i++)+".png");
+		png_save(0,graph_boton_abajo,(i++)+".png");
+		png_save(0,graph_boton_izquierda,(i++)+".png");
+		png_save(0,graph_boton_derecha,(i++)+".png");
+	end
 End
 #ENDIF
 
@@ -824,7 +878,7 @@ End
 
 Function get_button(player,button);
 Begin
-	if(player>-1)
+	if(player>-1 and button>-1)
 		if(p[player].control>-1)
 			return gamepad[p[player].control].buttons[button];
 		end
@@ -834,7 +888,7 @@ End
 
 Function get_button_event(player,button,event_type);
 Begin
-	if(player>-1)
+	if(player>-1 and button>-1)
 		if(p[player].control>-1)
 			switch(event_type)
 				case on_press:

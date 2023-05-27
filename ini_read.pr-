@@ -12,10 +12,13 @@ Global
 End
 
 Function load_ini(string ruta);
-Private
-	string linea;
 Begin
-	loaded_ini_data=file(ruta);
+	loaded_ini_data=file(ruta)+chr(13)+chr(10);
+end
+
+Function load_ini_string(string content);
+Begin
+	loaded_ini_data=content+chr(13)+chr(10);
 end
 
 Function string read_ini(string seccion,string clave);
@@ -68,7 +71,7 @@ Begin
 	end
 end
 
-Function read_ini_int(string seccion,string clave,int defecto);
+Function int read_ini_int(string seccion,string clave,int defecto);
 Private
 	string datos;
 	int pos_seccion;
@@ -127,4 +130,30 @@ Begin
 	
 	return datos;
 End
+
+Function int ini_section_exists(string searching);
+Private
+	string section_name;
+	int start_pos;
+	int end_pos;
+Begin
+	from i=0 to len(loaded_ini_data);
+		if(loaded_ini_data[i]=="[")
+			start_pos=i+1;
+		end
+		if(start_pos>0)
+			if(loaded_ini_data[i]=="]")
+				end_pos=i;
+				section_name=substr(loaded_ini_data,start_pos,end_pos-start_pos);
+				if(section_name == searching)
+					return 1;
+				end
+				start_pos=0;
+				end_pos=0;
+			end
+		end
+	end	
+	return 0;
+End
+
 #ENDIF

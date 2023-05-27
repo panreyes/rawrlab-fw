@@ -9,17 +9,24 @@ include "../../../libs/rawrlab-fw/pxtcompat.h";
 include "../../../libs/rawrlab-fw/ini_read.pr-";
 include "../../../libs/rawrlab-fw/string_replace.pr-";
 
+Const
+	ANIMATION_NOT_STARTED =  0;
+	ANIMATION_COMPLETED   = 10;
+End
+
 Global
-	struct animation_sets[20];
+	struct animation_sets[100];
 		string name;
 		int frames_delay;
 		int last_anim_slot;
+		int default_anim;
 		struct anim[50];
 			string name;
 			string next_animation_string;
 			int frames_delay;
 			int _loop;
 			int _repeat;
+			int manual;
 			int next_animation;
 			int first_frame;
 			int last_frame;
@@ -38,14 +45,46 @@ Local
 	int anim_id_frame; //este se usa en animaciones fijas
 	int anim_repeated;
 	int anim_skip_frame;
+	int anim_status; //0: Not started, 1: Running, ..., 10: Completed
+End
+
+Function animation_get_frame_int(string linea, char separador, int num_parametro);
+Private
+	string parametro;
+	int pos_inicio;
+	int pos_final;
+Begin
+	from i=0 to len(linea);
+		if(linea[i]==separador) //Separador
+			j++;
+		else
+			if(j==num_parametro)
+				parametro+=""+linea[i];
+			end
+		end
+	end
+	return atoi(parametro);
+End
+
+Function animation_set_get_id(string animation_set_name);
+Begin
+	from x=1 to animation_sets_number;
+		if(animation_sets[x].name==animation_set_name)
+			return x;
+		end
+	end
+	return 0;
 End
 
 Function animation_anim_id(int animation_set,string name);
 Begin
+	if(name == "")
+		return 0;
+	end
 	if(animation_sets[animation_set].last_anim_slot<1)
 		return 0;
 	end
-
+	
 	from y=1 to animation_sets[animation_set].last_anim_slot;
 		if(animation_sets[animation_set].anim[y].name==name)
 			return y;
@@ -60,6 +99,8 @@ Private
 	string animation_section_name;
 	int _animation_counter;
 	int animation_slot;
+	string frames;
+	int frame_number;
 Begin
 	animation_sets_number++;
 	load_ini(anim_file);
@@ -72,7 +113,7 @@ Begin
 	//animation_sets[animation_sets_number].name="Unknown";
 	//animation_sets[animation_sets_number].frames_delay=4;
 	
-	//read each animation
+	//read every animation
 	from x=1 to 50;
 		animation_section_name=ini_get_section_name(x,"anim:");
 		if(animation_section_name!="")
@@ -91,6 +132,7 @@ Begin
 			
 			animation_sets[animation_sets_number].anim[animation_slot]._loop=read_ini_int(animation_section_name,"loop",1);
 			animation_sets[animation_sets_number].anim[animation_slot]._repeat=read_ini_int(animation_section_name,"repeat",0);
+			animation_sets[animation_sets_number].anim[animation_slot].manual=read_ini_int(animation_section_name,"manual",0);
 			
 			//espera... y ésto es correcto?
 			if(animation_sets[animation_sets_number].anim[animation_slot]._repeat!=0)
@@ -103,7 +145,19 @@ Begin
 			animation_sets[animation_sets_number].anim[animation_slot].frames_delay=read_ini_int(animation_section_name,"delay",0);
 
 			//Pendiente cargar los frames sueltos!
-			animation_sets[animation_sets_number].anim[animation_slot].frames[1]=read_ini_int(animation_section_name,"frames",0);
+			frames = read_ini(animation_section_name,"frames");
+			if(frames != "")
+				i=0;
+				loop
+					frame_number = animation_get_frame_int(frames, ",", i);
+					if(frame_number<1)
+						break;
+					end
+					i++;
+					animation_sets[animation_sets_number].anim[animation_slot].frames[i]=frame_number;
+				end
+			end
+			//animation_sets[animation_sets_number].anim[animation_slot].frames[1]=read_ini_int(animation_section_name,"frames",0);
 		
 			//say(animation_slot);
 			//say(animation_sets[animation_sets_number].anim[animation_slot].name);
@@ -112,11 +166,15 @@ Begin
 		end
 	end
 	
+	//find out default animation (idle/stop, etc...)
+	animation_sets[animation_sets_number].default_anim=animation_anim_id(animation_sets_number,read_ini("Global","default"));
+	
 	//resolve each next animation!
 	from x=1 to animation_sets[animation_sets_number].last_anim_slot;
-		if(animation_sets[animation_sets_number].anim[x].next_animation_string!="")
+		if(animation_sets[animation_sets_number].anim[x].next_animation_string!="") // FIXME: No siempre elige la animación siguiente correcta :(
 			animation_sets[animation_sets_number].anim[x].next_animation=animation_anim_id(animation_sets_number,animation_sets[animation_sets_number].anim[x].next_animation_string);
-			//say(animation_sets[animation_sets_number].anim[x].next_animation_string+" -> "+animation_sets[animation_sets_number].anim[x].next_animation);
+			// say("From "+animation_sets[animation_sets_number].anim[x].name+" to "+animation_sets[animation_sets_number].anim[animation_sets[animation_sets_number].anim[x].next_animation].name);
+			// say(animation_sets[animation_sets_number].anim[x].next_animation_string+" -> "+animation_sets[animation_sets_number].anim[x].next_animation);
 		end
 	end
 	
@@ -124,22 +182,38 @@ Begin
 End
 
 Function animate_me();
+Begin
+	animate_that(father);
+End
+
+Function animate_that(that_id);
 Private
 	int my_delay;
 	int animation_changed;
 	int _animation_next;
 Begin
 	// Recogemos datos, para tenerlos a mano
-	animation_set=father.animation_set;
-	animation=father.animation;
-	last_animation=father.last_animation;
-	anim_counter=father.anim_counter;
-	file=father.file;
-	graph=father.graph;
-	anim_ticks=father.anim_ticks;
-	anim_repeated=father.anim_repeated;
-	anim_id_frame=father.anim_id_frame;
-	anim_skip_frame=father.anim_skip_frame;
+	animation_set=that_id.animation_set;
+	animation=that_id.animation;
+	last_animation=that_id.last_animation;
+	anim_counter=that_id.anim_counter;
+	file=that_id.file;
+	graph=that_id.graph;
+	anim_ticks=that_id.anim_ticks;
+	anim_repeated=that_id.anim_repeated;
+	anim_id_frame=that_id.anim_id_frame;
+	anim_skip_frame=that_id.anim_skip_frame;
+	anim_status=that_id.anim_status;
+	
+	// Si el ID de animación es erróneo, no hacemos nada
+	if(animation < 1 or animation_set < 1)
+		return;
+	end
+	
+	// Si esta animación es manual, retornamos aquí
+	if(animation_sets[animation_set].anim[animation].manual)
+		return;
+	end
 	
 	// Si ha cambiado la animación, se reinicia el contador
 	If(animation!=last_animation)
@@ -147,11 +221,12 @@ Begin
 		anim_ticks=0;
 		anim_repeated=0;
 		anim_id_frame=0;
+		anim_status=0;
 		animation_changed=1;
 	End
 
 	anim_ticks++;
-	father.last_animation=animation;
+	that_id.last_animation=animation;
 
 	// Gestión de las animaciones en base al archivo que hemos abierto
 	
@@ -189,23 +264,29 @@ Begin
 					anim_id_frame--; //nos quedamos en el último frame!
 					if(animation_sets[animation_set].anim[animation].next_animation!=0)
 						_animation_next=animation_sets[animation_set].anim[animation].next_animation;
+					else
+						anim_status = ANIMATION_COMPLETED;
 					end
 				end
 			end
 			graph=animation_sets[animation_set].anim[animation].frames[anim_id_frame];
 		
-		else //si tenemos un frame de inicio y otro de fin
+		else //si tenemos un frame de inicio y (opcionalmente) otro de fin
 			anim_id_frame=0;
 			graph++;
-			if(graph>animation_sets[animation_set].anim[animation].last_frame or (animation_sets[animation_set].anim[animation].last_frame==0 and !map_exists(file,graph))) //fin de la animación!
+			
+			if((animation_sets[animation_set].anim[animation].last_frame!=0 and graph>animation_sets[animation_set].anim[animation].last_frame)
+			  OR (animation_sets[animation_set].anim[animation].last_frame==0 and !map_exists(file,graph))) //Llegamos al fin de la animación!	
 				anim_repeated++;
-				if((animation_sets[animation_set].anim[animation]._repeat>0 and animation_sets[animation_set].anim[animation]._repeat!=anim_repeated) 
+				if((animation_sets[animation_set].anim[animation]._repeat>0 and animation_sets[animation_set].anim[animation]._repeat!=anim_repeated)
 				     or animation_sets[animation_set].anim[animation]._loop) //si tiene un número de repeticiones determinado y no lo hemos alcanzado, o tiene un bucle infinito, reiniciamos
 					graph=animation_sets[animation_set].anim[animation].first_frame;
 				else
 					graph--;
-					if(animation_sets[animation_set].anim[animation].next_animation!=0)
-						_animation_next=animation_sets[animation_set].anim[animation].next_animation;
+					if(animation_sets[animation_set].anim[animation].next_animation != 0)
+						_animation_next = animation_sets[animation_set].anim[animation].next_animation;
+					else
+						anim_status = ANIMATION_COMPLETED;
 					end					
 				end
 			end
@@ -219,31 +300,49 @@ Begin
 	// ---------------------------
 	
 	//Devolvemos datos
-	father.graph=graph;
-	father.anim_counter=anim_counter;
-	father.anim_ticks=anim_ticks;
-	father.animation=animation;
-	father.animation_set=animation_set;
-	father.anim_repeated=anim_repeated;
-	father.anim_id_frame=anim_id_frame;
-	
+	that_id.graph=graph;
+	that_id.anim_counter=anim_counter;
+	that_id.anim_ticks=anim_ticks;
+	that_id.animation=animation;
+	that_id.animation_set=animation_set;
+	that_id.anim_repeated=anim_repeated;
+	that_id.anim_id_frame=anim_id_frame;	
+	that_id.anim_status=anim_status;
 End
 
-Function animation_change(string animation_set_name,string animation_anim_name);
+Function animation_change(string animation_anim_name);
+Begin
+	return animation_change_that(father,animation_anim_name);
+End
+
+Function animation_set_change(string animation_set_name);
+Begin
+	return animation_set_change_that(father,animation_set_name);
+End
+
+Function animation_set_change_that(int that_id, string animation_set_name);
 Private
 	int animation_set_number;
-	int animation_anim_number;
 Begin
 	from x=1 to animation_sets_number;
 		if(animation_sets[x].name==animation_set_name)
 			animation_set_number=x;
 			break;
 		end
-	end
+	end		
+	that_id.animation_set=animation_set_number;
+End
+
+Function animation_change_that(int that_id,string animation_anim_name);
+Private
+	int animation_set_number;
+	int animation_anim_number;
+Begin
+	animation_set_number = that_id.animation_set;
 	
 	if(animation_set_number==0) 
 		return 0; 
-	end	
+	end
 	
 	from x=1 to animation_sets[animation_set_number].last_anim_slot;
 		if(animation_sets[animation_set_number].anim[x].name==animation_anim_name)
@@ -256,8 +355,9 @@ Begin
 		return 0; 
 	end
 	
-	father.animation_set=animation_set_number;
-	father.animation=animation_anim_number;
+	that_id.animation_set=animation_set_number;
+	that_id.animation=animation_anim_number;
+	that_id.anim_status=ANIMATION_NOT_STARTED;
 	
 	return animation_anim_number;
 End

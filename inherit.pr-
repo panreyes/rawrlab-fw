@@ -1,0 +1,19 @@
+Function inherit(that_id);
+Begin
+	if(exists(father) and exists(that_id))
+		father.x=that_id.x;
+		father.y=that_id.y;
+		father.z=that_id.z;
+		father.ctype=that_id.ctype;
+		father.cnumber=that_id.cnumber;
+		father.angle=that_id.angle;
+		father.size=that_id.size;
+		father.size_x=that_id.size_x;
+		father.size_y=that_id.size_y;
+		father.flags=that_id.flags;
+		father.file=that_id.file;
+		father.graph=that_id.graph;
+		father.alpha=that_id.alpha;
+		father.player=that_id.player;
+	end
+End
